@@ -56,6 +56,7 @@ async function bruteBtcAddr(mnemonicPartial, allWords, addrHash160list) {
     for (let addrHash of addrHash160list) {
       if (addrHash[0] == hash[0] && addrHash[1] == hash[1] && bytesToHex(hash) === bytesToHex(addrHash)) {
         found = parts[0] + allWords[(await getValidIndexes(allWords, parts))[i]] + parts[1];
+        console.log(`[${THREAD_NUM}] FOUND! ${found}\n`)
       }
     }
     i++

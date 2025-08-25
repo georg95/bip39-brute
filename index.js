@@ -24,7 +24,6 @@ function threadPool(THREADS) {
 const biplist = fetch('bip39.txt').then(r => r.text()).then(t => t.split('\n').map(x => x.trim()).filter(x => x))
 
 document.addEventListener('DOMContentLoaded', () => {
-  console.log('DOMContentLoaded')
   window.brute.onclick = startBrute
   async function checkInput() {
     window.brute.style.visibility = await validateInput() ? 'visible' : 'hidden'
@@ -82,17 +81,26 @@ async function validateInput() {
 async function startBrute() {
   const { bip39mask, addrHash160list } = await validateInput()
   const allWords = await biplist
-  const THREADS = navigator.hardwareConcurrency || 4
-  const { waitFree, waitAll } = threadPool(THREADS)
-  const WORD_CHECK = allWords.slice(0, 256).reverse()
+
   const start = performance.now()
-  let i = 0
-  for (let word of WORD_CHECK) {
-    const { res, postMessage, isNew } = await waitFree()
+  if (bip39mask.split('*').length <= 2) {
+    const worker = new Worker(`worker.js?i=0`)
+    worker.postMessage({ allWords, mnemonicPartial: bip39mask, addrHash160list })
+    const res = await new Promise(res => { worker.onmessage = res })
     if (res.data) {
       window.output.innerHTML = `FOUND! ${res.data}\n`;
-      return
     }
+    const time = (performance.now() - start) / 1000
+    const totalOps = 2048 / 16
+    window.output.innerHTML += `\nChecked all in ${time | 0} seconds (${totalOps / time | 0} mnemonic/s)\n`;
+    worker.terminate()
+    return
+  }
+  const THREADS = navigator.hardwareConcurrency || 4
+  const { waitFree, waitAll } = threadPool(THREADS)
+  let i = 0
+  for (let word of allWords) {
+    const { res, postMessage, isNew } = await waitFree()
     const message = { mnemonicPartial: bip39mask.replace('*', word), addrHash160list }
     if (isNew) {
       message.allWords = allWords
@@ -101,21 +109,27 @@ async function startBrute() {
     if (i >= THREADS) {
       const time = (performance.now() - start) / 1000
       const ops = 2048 * (i - THREADS) / 16
-      window.output.innerHTML = `${(100 * (i - THREADS) / WORD_CHECK.length).toFixed(1)}%, ${ops / time | 0} mnemonic/s\n`
+      window.output.innerHTML = `${(100 * (i - THREADS) / allWords.length).toFixed(1)}%, ${ops / time | 0} mnemonic/s\n`
     } else {
       window.output.innerHTML = `Starting...\n`
     }
+    if (res.data) {
+      window.output.innerHTML = `FOUND! ${res.data}\n`;
+      break
+    }
     i++
   }
-  window.output.innerHTML = `Finishing...\n`
-  const arr = await waitAll()
-  arr.forEach(r => {
-    if (r[0].data) {
-      window.output.innerHTML = `FOUND! ${r[0].data}\n`;
-    }
-  })
+  if (i === allWords.length) {
+    window.output.innerHTML = `Finishing...\n`
+    const arr = await waitAll()
+    arr.forEach(r => {
+      if (r[0].data) {
+        window.output.innerHTML = `FOUND! ${r[0].data}\n`;
+      }
+    })
+  }
   const time = (performance.now() - start) / 1000
-  const totalOps = 2048 * WORD_CHECK.length / 16
+  const totalOps = 2048 * i / 16
   window.output.innerHTML += `\nChecked all in ${time | 0} seconds (${totalOps / time | 0} mnemonic/s)\n`;
 
 }
