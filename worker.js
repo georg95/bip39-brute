@@ -43,7 +43,7 @@ async function bruteBtcAddr(mnemonicPartial, allWords, addrHash160list) {
 
   const privKeys = []
   for (let seed of seeds) {
-    privKeys.push(await derivePath(seed))
+    (await derivePath(seed)).forEach(k => privKeys.push(k))
   }
   const pubKeys = []
   for (let privKey of privKeys) {
@@ -189,17 +189,17 @@ async function derivePath(seed) {
     privKey = (bytesToBigInt(I.slice(0, 32)) + privKey) % CURVE_N;
     chainCode = I.slice(32)
   }
-  {
-    DATABUF.set([0, 0, 0, 0], 33)
-    DATABUF.set(getPublicKey(privKey), 0)
-    DATABUF[36] = 0x00
-    const cryptoKey = await crypto.subtle.importKey("raw", chainCode, { name: "HMAC", hash: "SHA-512" }, false, ["sign"]);
-    const signature = await crypto.subtle.sign("HMAC", cryptoKey, DATABUF);
-    const I = new Uint8Array(signature);
-    privKey = (bytesToBigInt(I.slice(0, 32)) + privKey) % CURVE_N;
+  var privKeys = []
+  DATABUF.set([0, 0, 0, 0], 33)
+  DATABUF.set(getPublicKey(privKey), 0)
+  const cryptoKey = await crypto.subtle.importKey("raw", chainCode, { name: "HMAC", hash: "SHA-512" }, false, ["sign"])
+  for (let i = 0; i < 5; i++) {
+    DATABUF[36] = i
+    const I = new Uint8Array(await crypto.subtle.sign("HMAC", cryptoKey, DATABUF))
+    privKeys.push((bytesToBigInt(I.slice(0, 32)) + privKey) % CURVE_N)
   }
 
-  return privKey;
+  return privKeys;
 }  
 
 function bytesToHex(bytes) {

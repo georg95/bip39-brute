@@ -6,9 +6,8 @@ Test data, mnemonic:
 ```
 abandon abandon abandon abandon abandon abandon abandon abandon abandon * * about
 ```
-Test data, address list:
+Test data, address list (m/44'/0'/0'/0/1, m/44'/0'/0'/0/2):
 ```
-19utzprLK7QtykhXndTXpmoxCm4upKWmyZ
 1PUXg1Hj4eE5fUL1v66RzPcgQLzqFwJqwR
 1C4toMQMVsudfKbf2e5HNzd68QaGamafQr
 ```
@@ -19,7 +18,7 @@ Test data, address list:
 - [x] Multithreading CPU
 - [x] Legacy bitcoin addresses
 - [x] 12-words mnemonic
-- [ ] Multiple derivation addresses
+- [x] Multiple derivation addresses
 - [ ] P2SH/Segwit bitcoin addresses
 - [ ] 15/18/24-words mnemonic
 - [ ] More seed templates
