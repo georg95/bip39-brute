@@ -2,11 +2,11 @@
 
 let allWords = []
 onmessage = async function (message) {
-  const { mnemonicPartial, addrHash160list } = message.data;
+  const { mnemonicPartial, addrHash160list, addrTypes } = message.data;
   if (message.data.allWords) {
     allWords = message.data.allWords
   }
-  const found = await bruteBtcAddr(mnemonicPartial, allWords, addrHash160list)
+  const found = await bruteBtcAddr(mnemonicPartial, allWords, addrHash160list, addrTypes)
   postMessage(found)
 }
 const THREAD_NUM = Number(location.href.split('i=')[1])
@@ -22,11 +22,10 @@ async function getValidIndexes(allWords, parts) {
   return validIndexes
 }
 
-async function bruteBtcAddr(mnemonicPartial, allWords, addrHash160list) {
+async function bruteBtcAddr(mnemonicPartial, allWords, addrHash160list, addrTypes) {
   if (allWords.length === 0) throw new Error('allWords is empty')
   var parts = mnemonicPartial.split('*')
   if (parts.length !== 2) throw new Error('one * supported')
-  var start = performance.now()
   var seeds = []
   if (THREAD_NUM === 0 || THREAD_NUM === 1) {
     const validIndexes = await getValidIndexes(allWords, parts)
@@ -37,26 +36,28 @@ async function bruteBtcAddr(mnemonicPartial, allWords, addrHash160list) {
   } else {
     seeds = await mnemonicToSeeds(mnemonicPartial)
   }
-  var mstime = performance.now() - start | 0
-  var ops = seeds.length / (mstime / 1000)
-  // console.log(`pbkdf2[${THREAD_NUM}] ${ops | 0} ops/s`)
 
-  const privKeys = []
-  for (let seed of seeds) {
-    (await derivePath(seed)).forEach(k => privKeys.push(k))
-  }
-  const pubKeys = []
-  for (let privKey of privKeys) {
-    pubKeys.push(getPublicKey(privKey))
-  }
-  let i = 0
   let found = ''
-  for (let pubKey of pubKeys) {
-    const hash = await hash160(pubKey)
-    for (let addrHash of addrHash160list) {
-      if (addrHash[0] == hash[0] && addrHash[1] == hash[1] && bytesToHex(hash) === bytesToHex(addrHash)) {
-        found = parts[0] + allWords[(await getValidIndexes(allWords, parts))[i]] + parts[1];
-        console.log(`[${THREAD_NUM}] FOUND! ${found}\n`)
+  for (addrType of addrTypes) {
+    let reedemScript = new Uint8Array(22)
+    reedemScript[0] = 0x00
+    reedemScript[1] = 0x14
+    let i = 0
+    for (let seed of seeds) {
+      let privKeys = await derivePath(seed, addrType)
+      for (let privKey of privKeys) {
+        const pubKey = getPublicKey(privKey)
+        let hash = await hash160(pubKey)
+        if (addrType === 'p2sh') {
+          reedemScript.set(hash, 2)
+          hash = await hash160(reedemScript)
+        }
+        for (let addrHash of addrHash160list) {
+          if (addrHash[0] == hash[0] && addrHash[1] == hash[1] && bytesToHex(hash) === bytesToHex(addrHash)) {
+            found = parts[0] + allWords[(await getValidIndexes(allWords, parts))[i/5|0]] + parts[1];
+            console.log(`[${THREAD_NUM}] FOUND! ${found}\n`)
+          }
+        }
       }
     }
     i++
@@ -143,7 +144,13 @@ let mcryptoKey = null;
 crypto.subtle.importKey("raw", BITCOIN_SEED, { name: "HMAC", hash: "SHA-512" }, false, ["sign"]).then(key => mcryptoKey = key);
 
 const DATABUF = new Uint8Array(1 + 32 + 4);
-async function derivePath(seed) {
+const ADDRTYPEMAP = {
+  'p2wphk': 84,
+  'p2pkh': 44,
+  'p2sh': 49,
+}
+async function derivePath(seed, addrType) {
+  if (!ADDRTYPEMAP[addrType]) { throw new Error(`Invalid address type: ${addrType}`) }
   const msignature = await crypto.subtle.sign("HMAC", mcryptoKey, seed)
   const master = new Uint8Array(msignature)
   let privKey = bytesToBigInt(master.slice(0, 32), 32); 
@@ -152,7 +159,7 @@ async function derivePath(seed) {
   {
     DATABUF[0] = 0x00
     DATABUF.set(bigIntToBytes(privKey, 32), 1)
-    DATABUF.set([128, 0, 0, 44], 33)
+    DATABUF.set([128, 0, 0, ADDRTYPEMAP[addrType]], 33)
     const cryptoKey = await crypto.subtle.importKey("raw", chainCode, { name: "HMAC", hash: "SHA-512" }, false, ["sign"]);
     const signature = await crypto.subtle.sign("HMAC", cryptoKey, DATABUF);
     const I = new Uint8Array(signature);

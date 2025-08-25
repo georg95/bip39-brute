@@ -27,6 +27,7 @@
             background-color: #222;
             color: bisque;
             min-height: 80px;
+            box-sizing: border-box;
         }
         button {
             background-color: #222;
@@ -35,13 +36,18 @@
         pre {
             text-wrap: auto;
         }
+        #brute {
+            width: 100%;
+            height: 40px;
+            margin-top: 20px;
+        }
     </style>
 <body>
   <h2>Mnemonic mask</h2>
   <textarea id="bipmask">abandon abandon abandon abandon abandon abandon abandon abandon abandon * * about</textarea>
   <h2>Known address list</h2>
-  <textarea  id="addrlist" spellcheck="false">1PUXg1Hj4eE5fUL1v66RzPcgQLzqFwJqwR
-1C4toMQMVsudfKbf2e5HNzd68QaGamafQr</textarea>
+  <textarea  id="addrlist" spellcheck="false">bc1quvs97w3htruuhhywjzrx66w3s6v50jgqqvl7es
+bc1qupxhne64nufcqqh64qvk6mwenmkse89qcefwe2</textarea>
   <button id="brute">Brute</button>
   <pre id="output"></pre>
 </body>

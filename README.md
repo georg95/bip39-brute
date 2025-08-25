@@ -6,10 +6,10 @@ Test data, mnemonic:
 ```
 abandon abandon abandon abandon abandon abandon abandon abandon abandon * * about
 ```
-Test data, address list (m/44'/0'/0'/0/1, m/44'/0'/0'/0/2):
+Test data, address list (m/84'/0'/0'/0/1, m/84'/0'/0'/0/2):
 ```
-1PUXg1Hj4eE5fUL1v66RzPcgQLzqFwJqwR
-1C4toMQMVsudfKbf2e5HNzd68QaGamafQr
+bc1quvs97w3htruuhhywjzrx66w3s6v50jgqqvl7es
+bc1qupxhne64nufcqqh64qvk6mwenmkse89qcefwe2
 ```
 
 ### TODO:
@@ -19,7 +19,7 @@ Test data, address list (m/44'/0'/0'/0/1, m/44'/0'/0'/0/2):
 - [x] Legacy bitcoin addresses
 - [x] 12-words mnemonic
 - [x] Multiple derivation addresses
-- [ ] P2SH/Segwit bitcoin addresses
+- [x] P2SH/Segwit bitcoin addresses
 - [ ] 15/18/24-words mnemonic
 - [ ] More seed templates
 - [ ] Bruteforce settings
