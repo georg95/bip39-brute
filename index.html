@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Bitcoin Address Generator</title>
+  <script src="index.js"></script>
+</head>
+    <style>
+        html, body {
+            height: 100%;
+            width: 100%;
+            box-sizing: border-box;
+            background-color: #222;
+            font-size: 15px;
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0;
+            color: bisque;
+        }
+        html {
+            padding: 0;
+        }
+        body {
+            padding: 20px;
+        }
+        textarea {
+            width: 100%;
+            background-color: #222;
+            color: bisque;
+            min-height: 80px;
+        }
+        button {
+            background-color: #222;
+            color: bisque;
+        }
+        pre {
+            text-wrap: auto;
+        }
+    </style>
+<body>
+  <h2>Mnemonic mask</h2>
+  <textarea id="bipmask">abandon abandon abandon abandon abandon abandon abandon abandon abandon * * about</textarea>
+  <h2>Known address list</h2>
+  <textarea  id="addrlist" spellcheck="false">1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA</textarea>
+  <button id="brute">Brute</button>
+  <pre id="output"></pre>
+</body>
+</html>
