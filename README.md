@@ -20,7 +20,7 @@ bc1qupxhne64nufcqqh64qvk6mwenmkse89qcefwe2
 - [x] 12-words mnemonic
 - [x] Multiple derivation addresses
 - [x] P2SH/Segwit bitcoin addresses
-- [ ] 15/18/24-words mnemonic
+- [x] 15/18/24-words mnemonic
 - [ ] More seed templates
 - [ ] Bruteforce settings
 - [ ] Ethereum wallets

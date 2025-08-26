@@ -17,7 +17,7 @@ async function getValidIndexes(allWords, parts) {
   const validIndexes = []
   for (let i = 0; i < allWords.length; i++) {
     mnemoIndexes[wordIndex] = i
-    if (await isValidMnemonic12(mnemoIndexes)) { validIndexes.push(i) }
+    if (await isValidMnemonic(mnemoIndexes)) { validIndexes.push(i) }
   }
   return validIndexes
 }
@@ -54,13 +54,13 @@ async function bruteBtcAddr(mnemonicPartial, allWords, addrHash160list, addrType
         }
         for (let addrHash of addrHash160list) {
           if (addrHash[0] == hash[0] && addrHash[1] == hash[1] && bytesToHex(hash) === bytesToHex(addrHash)) {
-            found = parts[0] + allWords[(await getValidIndexes(allWords, parts))[i/5|0]] + parts[1];
+            found = parts[0] + allWords[(await getValidIndexes(allWords, parts))[i]] + parts[1];
             console.log(`[${THREAD_NUM}] FOUND! ${found}\n`)
           }
         }
       }
+      i++
     }
-    i++
   }
   return found
 }
@@ -90,14 +90,14 @@ async function mnemonicToSeeds(mnemonicPartial) {
 
 function mnemonicIndexes(mnemonic, wordlist) {
   const words = mnemonic.trim().toLowerCase().split(/\s+/);
-  if (![12, 15, 18, 21, 24].includes(words.length)) throw new Error(`invalid mnemonic length ${words.length}`);
+  if (![12, 15, 18, 24].includes(words.length)) throw new Error(`invalid mnemonic length ${words.length}`);
   const indexes = words.map(word => wordlist.indexOf(word));
   if (indexes.includes(-1)) throw new Error(`invalid word ${words.find(word => wordlist.indexOf(word) === -1)}`)
   return indexes;
 }
 
-async function isValidMnemonic12(indexes) {
-  const entropyBytes = new Uint8Array(16);
+async function isValidMnemonic(indexes) {
+  const entropyBytes = new Uint8Array(33);
   let acc = 0;
   let accBits = 0;
   var j = 0;
@@ -109,8 +109,20 @@ async function isValidMnemonic12(indexes) {
       entropyBytes[j++] = (acc >>> accBits) & 0xff;
     }
   }
-  const hashBits = new Uint8Array(await crypto.subtle.digest('SHA-256', entropyBytes))[0] >> 4;
-  return (indexes[11] & 0x0f) === hashBits;
+  if (indexes.length === 12) {
+    const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', entropyBytes.slice(0, 16)))
+    return (indexes[11] & 0x0f) === hash[0] >> 4;
+  } else if (indexes.length === 24) {
+      const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', entropyBytes.slice(0, 32)))
+      return hash[0] === entropyBytes[32];
+  } else if (indexes.length === 18) {
+      const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', entropyBytes.slice(0, 24)))
+      return (hash[0] >> 2) === (indexes[17] & 0x3f);
+  } else if (indexes.length === 15) {
+      const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', entropyBytes.slice(0, 20)))
+      return ((hash[0] >> 3) & 0x1f) === (indexes[14] & 0x1f);
+  }
+  return false
 }
 
 const encoder = new TextEncoder()

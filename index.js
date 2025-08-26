@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
 async function startBrute() {
   const { bip39mask, addrHash160list, addrTypes } = await validateInput()
   const allWords = await biplist
+  const VALID_SEEDS = { '12': 16, '15': 32, '18': 64, '24': 256 }[bip39mask.split(' ').length];
 
   const start = performance.now()
   if (bip39mask.split('*').length <= 2) {
@@ -25,14 +26,14 @@ async function startBrute() {
       window.output.innerHTML = `FOUND! ${res.data}\n`;
     }
     const time = (performance.now() - start) / 1000
-    const totalOps = 2048 / 16
+    const totalOps = 2048 / VALID_SEEDS
     window.output.innerHTML += `\nChecked all in ${time | 0} seconds (${totalOps / time | 0} mnemonic/s)\n`;
     worker.terminate()
     return
   }
 
   const THREADS = navigator.hardwareConcurrency || 4
-  const { waitFree, waitAll } = threadPool(THREADS)
+  const { waitFree, waitAll, workers } = threadPool(THREADS)
   let i = 0
   for (let word of allWords) {
     const { res, postMessage, isNew } = await waitFree()
@@ -43,7 +44,7 @@ async function startBrute() {
     postMessage(message)
     if (i >= THREADS) {
       const time = (performance.now() - start) / 1000
-      const ops = 2048 * (i - THREADS) / 16
+      const ops = 2048 * (i - THREADS) / VALID_SEEDS
       window.output.innerHTML = `${(100 * (i - THREADS) / allWords.length).toFixed(1)}%, ${ops / time | 0} mnemonic/s\n`
     } else {
       window.output.innerHTML = `Starting...\n`
@@ -64,8 +65,9 @@ async function startBrute() {
     })
   }
   const time = (performance.now() - start) / 1000
-  const totalOps = 2048 * i / 16
+  const totalOps = 2048 * i / VALID_SEEDS
   window.output.innerHTML += `\nChecked all in ${time | 0} seconds (${totalOps / time | 0} mnemonic/s)\n`;
+  workers.forEach(w => w.terminate())
 }
 
 function threadPool(THREADS) {
@@ -88,7 +90,7 @@ function threadPool(THREADS) {
   async function waitAll() {
     return Promise.all(pool)
   }
-  return { waitFree, waitAll }
+  return { waitFree, waitAll, workers }
 }
 
 async function validateInput() {
@@ -97,8 +99,8 @@ async function validateInput() {
   const bip39mask = window.bipmask.value
   let result = true
   const words = bip39mask.trim().split(/[\s \t]+/)
-  if (words.length !== 12) {
-      window.output.innerHTML += `Expected 12 words, got ${words.length}\n`
+  if (![12, 15, 18, 24].includes(words.length)) {
+      window.output.innerHTML += `Expected 12/15/18/24 words, got ${words.length}\n`
       result = false
   }
   let asterisks = 0
