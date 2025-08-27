@@ -41,14 +41,34 @@
             height: 40px;
             margin-top: 20px;
         }
+        #settings-pane {
+            display: none;
+        }
+        #hide-settings, #show-settings {
+            width: 30px;
+            height: 30px;
+            padding: 0;
+        }
+        .top-header {
+            display: flex;
+            justify-content: space-between;
+        }
     </style>
 <body>
-  <h2>Mnemonic mask</h2>
-  <textarea id="bipmask">tenant grid summer affair garlic monitor off repeat tongue define,absent absent debris family only trouble rigid absent define,absent process * apology plate * slow</textarea>
-  <h2>Known address list</h2>
-  <textarea  id="addrlist" spellcheck="false">bc1q43a9fqn2pmed76n4q8rvahfz0zdp9udyd6edch
-bc1q0esjzsh4et4wxrfumglc97fpksvmwp8dwuwdxx</textarea>
-  <button id="brute">Brute</button>
-  <pre id="output"></pre>
+    <header id="brute-pane">
+        <h1 class="top-header">Mnemonic mask <button id="show-settings">⚙️</button></h1>
+        <textarea id="bipmask">tenant grid summer affair garlic monitor off repeat tongue define,absent absent debris family only trouble rigid absent define,absent process * apology plate * slow</textarea>
+        <h1>Known address list</h1>
+        <textarea id="addrlist" spellcheck="false">bc1q43a9fqn2pmed76n4q8rvahfz0zdp9udyd6edch</textarea>
+        <button id="brute">Brute</button>
+        <pre id="output"></pre>
+    </header>
+    <header id="settings-pane">
+        <h1 class="top-header">Settings <button id="hide-settings">⚙️</button></h1>
+        <h2>Threads count: <span id="threadsView">1</span></h2>
+        <input type="range" id="threads" min="1" max="8" value="4">
+        <h2>Derive addresses: <span id="deriveView">5</span></h2>
+        <input type="range" id="derive" min="0" step="5" max="50" value="5">
+    </header>
 </body>
 </html>

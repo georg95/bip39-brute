@@ -1,7 +1,32 @@
 const biplist = fetch('bip39.txt').then(r => r.text()).then(t => t.split('\n').map(x => x.trim()).filter(x => x))
 
+let THREADS = 1
+let DERIVE_ADDRESSES = 5
 document.addEventListener('DOMContentLoaded', () => {
   window.brute.onclick = startBrute
+  window['show-settings'].onclick = () => {
+    window['brute-pane'].style.display = 'none'
+    window['settings-pane'].style.display = 'block'
+  }
+  window['hide-settings'].onclick = () => {
+    window['brute-pane'].style.display = 'block'
+    window['settings-pane'].style.display = 'none'
+  }
+  window.threads.max = navigator.hardwareConcurrency || 4
+  window.threads.onchange = () => {
+    THREADS = Number(window.threads.value)
+    window.threadsView.innerText = THREADS
+  }
+  window.threads.value = navigator.hardwareConcurrency || 4
+  THREADS = navigator.hardwareConcurrency || 4
+  window.threadsView.innerText = THREADS
+  window.derive.onchange = () => {
+    DERIVE_ADDRESSES = Number(window.derive.value)
+    window.deriveView.innerText = Math.max(DERIVE_ADDRESSES, 1)
+  }
+  window.derive.value = DERIVE_ADDRESSES
+  window.deriveView.innerText = DERIVE_ADDRESSES
+
   async function checkInput() {
     window.brute.style.visibility = await validateInput() ? 'visible' : 'hidden'
   }
@@ -19,19 +44,20 @@ async function startBrute() {
   const VALID_SEEDS = { '12': 16, '15': 32, '18': 64, '24': 256 }[bip39mask.split(' ').length];
   let i = 0
   const { permCount, next } = permutations(bip39mask, allWords)
-  const THREADS = Math.min(permCount, navigator.hardwareConcurrency || 4)
-  const { waitFree, waitAll, workers } = threadPool(THREADS)
+  const EFFECIVE_THREADS = Math.min(permCount, THREADS)
+  const { waitFree, waitAll, workers } = threadPool(EFFECIVE_THREADS)
   for (; i < permCount; i++) {
     const { res, postMessage, isNew } = await waitFree()
     const message = { mnemonicPartial: next(), addrHash160list, addrTypes }
     if (isNew) {
       message.allWords = allWords
+      message.deriveCount = DERIVE_ADDRESSES
     }
     postMessage(message)
-    if (i >= THREADS) {
+    if (i >= EFFECIVE_THREADS) {
       const time = (performance.now() - start) / 1000
-      const ops = 2048 * (i - THREADS) / VALID_SEEDS
-      window.output.innerHTML = `${(100 * (i - THREADS) / permCount).toFixed(1)}%, ${ops / time | 0} mnemonic/s\n`
+      const ops = 2048 * (i - EFFECIVE_THREADS) / VALID_SEEDS
+      window.output.innerHTML = `${(100 * (i - EFFECIVE_THREADS) / permCount).toFixed(1)}%, ${ops / time | 0} mnemonic/s\n`
     } else {
       window.output.innerHTML = `Starting...\n`
     }

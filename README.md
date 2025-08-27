@@ -22,7 +22,7 @@ bc1q0esjzsh4et4wxrfumglc97fpksvmwp8dwuwdxx
 - [x] P2SH/Segwit bitcoin addresses
 - [x] 15/18/24-words mnemonic
 - [x] More seed templates
-- [ ] Bruteforce settings
+- [x] Bruteforce settings
 - [ ] Ethereum wallets
 - [ ] BSC wallets
 - [ ] Tron wallets

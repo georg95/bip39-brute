@@ -1,10 +1,15 @@
 
 
 let allWords = []
+let DERIVE_ADDRESSES = 1
 onmessage = async function (message) {
   const { mnemonicPartial, addrHash160list, addrTypes } = message.data;
   if (message.data.allWords) {
     allWords = message.data.allWords
+  }
+  if (message.data.deriveCount != undefined) {
+    DERIVE_ADDRESSES = Math.max(1, message.data.deriveCount)
+    console.log('DERIVE_ADDRESSES:', DERIVE_ADDRESSES)
   }
   const found = await bruteBtcAddr(mnemonicPartial, allWords, addrHash160list, addrTypes)
   postMessage(found)
@@ -212,7 +217,7 @@ async function derivePath(seed, addrType) {
   DATABUF.set([0, 0, 0, 0], 33)
   DATABUF.set(getPublicKey(privKey), 0)
   const cryptoKey = await crypto.subtle.importKey("raw", chainCode, { name: "HMAC", hash: "SHA-512" }, false, ["sign"])
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < DERIVE_ADDRESSES; i++) {
     DATABUF[36] = i
     const I = new Uint8Array(await crypto.subtle.sign("HMAC", cryptoKey, DATABUF))
     privKeys.push((bytesToBigInt(I.slice(0, 32)) + privKey) % CURVE_N)
