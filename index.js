@@ -13,31 +13,17 @@ document.addEventListener('DOMContentLoaded', () => {
 })
 
 async function startBrute() {
+  const start = performance.now()
   const { bip39mask, addrHash160list, addrTypes } = await validateInput()
   const allWords = await biplist
   const VALID_SEEDS = { '12': 16, '15': 32, '18': 64, '24': 256 }[bip39mask.split(' ').length];
-
-  const start = performance.now()
-  if (bip39mask.split('*').length <= 2) {
-    const worker = new Worker(`worker.js?i=0`)
-    worker.postMessage({ allWords, mnemonicPartial: bip39mask, addrHash160list, addrTypes })
-    const res = await new Promise(res => { worker.onmessage = res })
-    if (res.data) {
-      window.output.innerHTML = `FOUND! ${res.data}\n`;
-    }
-    const time = (performance.now() - start) / 1000
-    const totalOps = 2048 / VALID_SEEDS
-    window.output.innerHTML += `\nChecked all in ${time | 0} seconds (${totalOps / time | 0} mnemonic/s)\n`;
-    worker.terminate()
-    return
-  }
-
-  const THREADS = navigator.hardwareConcurrency || 4
-  const { waitFree, waitAll, workers } = threadPool(THREADS)
   let i = 0
-  for (let word of allWords) {
+  const { permCount, next } = permutations(bip39mask, allWords)
+  const THREADS = Math.min(permCount, navigator.hardwareConcurrency || 4)
+  const { waitFree, waitAll, workers } = threadPool(THREADS)
+  for (; i < permCount; i++) {
     const { res, postMessage, isNew } = await waitFree()
-    const message = { mnemonicPartial: bip39mask.replace('*', word), addrHash160list, addrTypes }
+    const message = { mnemonicPartial: next(), addrHash160list, addrTypes }
     if (isNew) {
       message.allWords = allWords
     }
@@ -45,7 +31,7 @@ async function startBrute() {
     if (i >= THREADS) {
       const time = (performance.now() - start) / 1000
       const ops = 2048 * (i - THREADS) / VALID_SEEDS
-      window.output.innerHTML = `${(100 * (i - THREADS) / allWords.length).toFixed(1)}%, ${ops / time | 0} mnemonic/s\n`
+      window.output.innerHTML = `${(100 * (i - THREADS) / permCount).toFixed(1)}%, ${ops / time | 0} mnemonic/s\n`
     } else {
       window.output.innerHTML = `Starting...\n`
     }
@@ -68,6 +54,34 @@ async function startBrute() {
   const totalOps = 2048 * i / VALID_SEEDS
   window.output.innerHTML += `\nChecked all in ${time | 0} seconds (${totalOps / time | 0} mnemonic/s)\n`;
   workers.forEach(w => w.terminate())
+}
+
+function permutations(input, bip39words) {
+  const tokens = input.split(" ");
+  var starCount = tokens.filter(t => t === "*").length;
+  const choices = tokens.map(token => {
+    if (token === "*") {
+      starCount--;
+      return starCount === 0 ? ["*"] : bip39words
+    }
+    return token.split(",")
+  })
+  const indices = new Array(choices.length).fill(0)
+  let done = false
+  return {
+    permCount: choices.reduce((acc, cur) => acc * cur.length, 1),
+    next() {
+      if (done) return null
+      const result = choices.map((opts, i) => opts[indices[i]]).join(" ")
+      for (let i = choices.length - 1; i >= 0; i--) {
+        indices[i]++
+        if (indices[i] < choices[i].length) break
+        indices[i] = 0
+        if (i === 0) done = true
+      }
+      return result
+    }
+  }
 }
 
 function threadPool(THREADS) {
@@ -106,10 +120,13 @@ async function validateInput() {
   let asterisks = 0
   for (let word of words) {
     if (word === '*') { asterisks++; continue }
-    if (!allWords.includes(word)) {
-      window.output.innerHTML += `${word} is invalid bip39 word\n`
-      result = false
+    for (let wordPart of word.split(',')) {
+      if (!allWords.includes(wordPart)) {
+        window.output.innerHTML += `${wordPart} is invalid bip39 word\n`
+        result = false
+      }
     }
+
   }
   if (asterisks == 0) {
     window.output.innerHTML += `Enter at least 1 asterisk\n`
