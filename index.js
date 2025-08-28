@@ -65,9 +65,8 @@ async function startBrute() {
       window.output.innerHTML = `FOUND! ${res.data}\n`;
       break
     }
-    i++
   }
-  if (i === allWords.length) {
+  if (i === permCount) {
     window.output.innerHTML = `Finishing...\n`
     const arr = await waitAll()
     arr.forEach(r => {
@@ -111,7 +110,7 @@ function permutations(input, bip39words) {
 }
 
 function threadPool(THREADS) {
-  window.output.innerHTML += `spawning ${THREADS} threads\n`;
+  console.log(`spawning ${THREADS} threads`);
   const workers = Array(THREADS).fill(0).map((x, i) => new Worker(`worker.js?i=${i}`))
   const pool = Array(THREADS).fill(0).map((x, i) => ([Promise.resolve(), i, true]))
   async function waitFree() {
@@ -170,7 +169,7 @@ async function validateInput() {
   const addrHash160list = []
   const addrTypes = new Set()
   for (let addr of addrlist) {
-    const { hash160, type } = await btcAddrToScriptHash(addr) || {}
+    const { hash160, type } = await addrToScriptHash(addr) || {}
     if (hash160) {
       addrTypes.add(type)
       addrHash160list.push(hash160)
@@ -182,9 +181,12 @@ async function validateInput() {
   return result && { bip39mask: words.join(' '), addrHash160list, addrTypes }
 }
 
-async function btcAddrToScriptHash(address) {
+async function addrToScriptHash(address) {
     const sha256HashSync = async (data) => {
       return new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(data)))
+    }
+    if (address.match(/^0x[0-9a-fA-F]{40}$/)) {
+      return { hash160: hexToUint8Array(address.slice(2)), type: 'eth' }
     }
     if (address.startsWith('bc1')) {
       try {
@@ -214,6 +216,13 @@ async function btcAddrToScriptHash(address) {
     }
 }
 
+function hexToUint8Array(hexString) {
+    const bytes = [];
+    for (let i = 0; i < hexString.length; i += 2) {
+        bytes.push(parseInt(hexString.substr(i, 2), 16));
+    }
+    return new Uint8Array(bytes);
+}
 
 function base58Decode(str) {
   const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';

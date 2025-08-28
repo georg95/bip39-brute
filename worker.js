@@ -28,6 +28,7 @@ async function getValidIndexes(allWords, parts) {
 }
 
 async function bruteBtcAddr(mnemonicPartial, allWords, addrHash160list, addrTypes) {
+  const keccak = await initKeccak
   if (allWords.length === 0) throw new Error('allWords is empty')
   var parts = mnemonicPartial.split('*')
   if (parts.length !== 2) throw new Error('one * supported')
@@ -43,16 +44,24 @@ async function bruteBtcAddr(mnemonicPartial, allWords, addrHash160list, addrType
   }
 
   let found = ''
+
   for (addrType of addrTypes) {
+    const [network, coinType] = ADDRTYPEMAP[addrType];
     let reedemScript = new Uint8Array(22)
     reedemScript[0] = 0x00
     reedemScript[1] = 0x14
     let i = 0
     for (let seed of seeds) {
-      let privKeys = await derivePath(seed, addrType)
+      let privKeys = await derivePath(seed, network, coinType)
       for (let privKey of privKeys) {
-        const pubKey = getPublicKey(privKey)
-        let hash = await hash160(pubKey)
+        let hash = null
+        if (addrType === 'eth') { 
+          const pubKey = getPublicKey(privKey, false) 
+          hash = (await keccak(pubKey.slice(1))).slice(12)
+        } else {
+          const pubKey = getPublicKey(privKey)
+          hash = await hash160(pubKey)
+        }
         if (addrType === 'p2sh') {
           reedemScript.set(hash, 2)
           hash = await hash160(reedemScript)
@@ -162,12 +171,12 @@ crypto.subtle.importKey("raw", BITCOIN_SEED, { name: "HMAC", hash: "SHA-512" }, 
 
 const DATABUF = new Uint8Array(1 + 32 + 4);
 const ADDRTYPEMAP = {
-  'p2wphk': 84,
-  'p2pkh': 44,
-  'p2sh': 49,
+  'p2wphk': [84, 0],
+  'p2pkh': [44, 0],
+  'p2sh': [49, 0],
+  'eth': [44, 60]
 }
-async function derivePath(seed, addrType) {
-  if (!ADDRTYPEMAP[addrType]) { throw new Error(`Invalid address type: ${addrType}`) }
+async function derivePath(seed, network, coinType) {
   const msignature = await crypto.subtle.sign("HMAC", mcryptoKey, seed)
   const master = new Uint8Array(msignature)
   let privKey = bytesToBigInt(master.slice(0, 32), 32); 
@@ -176,7 +185,7 @@ async function derivePath(seed, addrType) {
   {
     DATABUF[0] = 0x00
     DATABUF.set(bigIntToBytes(privKey, 32), 1)
-    DATABUF.set([128, 0, 0, ADDRTYPEMAP[addrType]], 33)
+    DATABUF.set([128, 0, 0, network], 33)
     const cryptoKey = await crypto.subtle.importKey("raw", chainCode, { name: "HMAC", hash: "SHA-512" }, false, ["sign"]);
     const signature = await crypto.subtle.sign("HMAC", cryptoKey, DATABUF);
     const I = new Uint8Array(signature);
@@ -186,7 +195,7 @@ async function derivePath(seed, addrType) {
   {
     DATABUF[0] = 0x00
     DATABUF.set(bigIntToBytes(privKey, 32), 1)
-    DATABUF.set([128, 0, 0, 0], 33)
+    DATABUF.set([128, 0, 0, coinType], 33)
     const cryptoKey = await crypto.subtle.importKey("raw", chainCode, { name: "HMAC", hash: "SHA-512" }, false, ["sign"]);
     const signature = await crypto.subtle.sign("HMAC", cryptoKey, DATABUF);
     const I = new Uint8Array(signature);
@@ -250,6 +259,55 @@ async function hash160(buffer) {
   digest(message.length)
   return new Uint8Array(memory.buffer).slice(get_ptr(0), get_ptr(0) + 20)
 }
+
+function hexToUint8Array(hexString) {
+    const bytes = [];
+    for (let i = 0; i < hexString.length; i += 2) {
+        bytes.push(parseInt(hexString.substr(i, 2), 16));
+    }
+    return new Uint8Array(bytes);
+}
+
+const KECCAK_WASM = hexToUint8Array(
+"0061736d010000000105016000017f0302010005030100110619037f01418080c0000b7f0041c081c0000b7f00418082c0000b072204066d656d6f72" +
+"790200096b656363616b323536000003494e500301034f555403020afa0901f70902027f2d7e2380808080004190026b2200248080808000024041c0" +
+"00450d00200041086a41c081c0800041c000fc0a00000b41002101024041c801450d00200041c8006a410041c801fc0b000b02400340200141c00046" +
+"0d01200041c8006a20016a200041086a20016a290000370300200141086a21010c000b0b20002903c801428080808080808080807f85210220002903" +
+"8801420185210341c07e21012000290388022104200029038002210520002903f801210620002903f001210720002903e801210820002903e0012109" +
+"20002903d801210a20002903d001210b20002903c001210c20002903b801210d20002903b001210e20002903a801210f20002903a001211020002903" +
+"980121112000290390012112200029038001211320002903782114200029037021152000290368211620002903602117200029035821182000290350" +
+"21192000290348211a037f024020010d0020002004370388022000200537038002200020063703f801200020073703f001200020083703e801200020" +
+"093703e0012000200a3703d8012000200b3703d001200020023703c8012000200c3703c0012000200d3703b8012000200e3703b0012000200f3703a8" +
+"01200020103703a001200020113703980120002012370390012000200337038801200020133703800120002014370378200020153703702000201637" +
+"03682000201737036020002018370358200020193703502000201a370348410021010240034020014120460d012001418082c080006a200041c8006a" +
+"20016a290300370000200141086a21010c000b0b20004190026a248080808000418082c080000f0b200c200885201185201585201a85221b200b2006" +
+"85200f85201385201885221c42018985221d201485211e201b420189200a200585200e85200385201785221f85221b2004852120201c200920048520" +
+"0d85201285201685222142018985221c200385423789222220022007852010852014852019852203201f42018985221f201885423e892223427f8583" +
+"201d200785420289222485210420034201892021852218200c854229892221201b200d854227892225427f85832022852107201c2005854238892226" +
+"201f200b85420f892227427f8583201d201085420a89222885210b202820182015854224892229427f8583201b201685421b89221685210c201f2013" +
+"85420689222a201d201985420189222b427f85832018200885421289222c85210d201b200985420889222d201c200e85421989222e427f8583202a85" +
+"2110201b201285421489221b201c201785421c892205427f8583201f200685423d89220685211220052006427f8583201d200285422d89221d852103" +
+"2006201d427f858320182011854203892202852113201d2002427f8583201b8521142002201b427f858320058521152018201a85221d2020420e8922" +
+"1b427f8583201c200a85421589221c852117201b201c427f8583201f200f85422b89221f852118201c201f427f8583201e422c89221c852119201f20" +
+"1c427f8583200141c081c080006a29030085201d85211a200141086a210120232024427f8583202185210520242021427f8583202585210620252022" +
+"427f8583202385210820292016427f8583202685210920162026427f8583202785210a20272028427f85832029852102202b202c427f8583202d8521" +
+"0e202c202d427f8583202e85210f202e202a427f8583202b852111201c201d427f8583201b8521160c000b0b0bca010100418080c0000bc001010000" +
+"000000000082800000000000008a8000000000008000800080000000808b800000000000000100008000000000818000800000008009800000000000" +
+"808a00000000000000880000000000000009800080000000000a000080000000008b800080000000008b000000000000808980000000000080038000" +
+"0000000080028000000000008080000000000000800a800000000000000a000080000000808180008000000080808000000000008001000080000000" +
+"000880008000000080")
+
+const initKeccak = (async function () {
+  const {instance: { exports: { INP: { value: INP_PTR }, OUT: { value: OUT_PTR }, keccak256, memory: {buffer} } }} =
+    await WebAssembly.instantiate(KECCAK_WASM)
+  const inpMemory = new Uint8Array(buffer, INP_PTR, 64);
+  const outMemory = new Uint8Array(buffer, OUT_PTR, 32);
+  return function keccak(buf) {
+    inpMemory.set(buf)
+    keccak256()
+    return outMemory
+  }
+})()
 
 const WASM = [
   0, 97, 115, 109, 1, 0, 0, 0, 1, 15, 3, 96, 1, 127, 0, 96, 1, 127, 1, 127, 96,
@@ -681,7 +739,7 @@ class Point {
 const fromHexString = (hexString) => Uint8Array.from(hexString.match(/.{1,2}/g).map((byte) => parseInt(byte, 16)));
 const G = new Point(0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798n, 0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8n, 1n);
 const I = new Point(0n, 1n, 0n);
-const getPublicKey = (privKey) => {
+const getPublicKey = (privKey, isCompressed=true) => {
     // let p = I;
     // for (let d = G; privKey > 0n; privKey >>= 1n) {
     //     const isBit = privKey & 1n
@@ -693,7 +751,10 @@ const getPublicKey = (privKey) => {
     const iz = invert(z);
     const x32b = fromHexString(M(x * iz).toString(16).padStart(64, '0'));
     // console.log('x32b:', bToHex(x32b))
-    return concatBytes(getPrefix(M(y * iz)), x32b);
+    if (isCompressed)        
+        return concatBytes(getPrefix(M(y * iz)), x32b);
+    const y32b = fromHexString(M(y * iz).toString(16).padStart(64, '0'))
+    return concatBytes(u8of(0x04), x32b, y32b);
 };
 
 const W = 8; // W is window size

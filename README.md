@@ -23,8 +23,8 @@ bc1q0esjzsh4et4wxrfumglc97fpksvmwp8dwuwdxx
 - [x] 15/18/24-words mnemonic
 - [x] More seed templates
 - [x] Bruteforce settings
-- [ ] Ethereum wallets
-- [ ] BSC wallets
+- [x] Ethereum wallets
+- [x] BSC wallets
 - [ ] Tron wallets
 - [ ] Solana wallets
 - [ ] WebGPU backend
