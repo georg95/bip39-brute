@@ -189,31 +189,17 @@ async function addrToScriptHash(address) {
       return { hash160: hexToUint8Array(address.slice(2)), type: 'eth' }
     }
     if (address.startsWith('bc1')) {
-      try {
-        return { hash160: decodeBech32(address), type: 'p2wphk' }
-      } catch (err) {
-        console.error(err)
-        return null
-      }
+      const hash160 = decodeBech32(address)
+      return hash160 && { hash160, type: 'p2wphk' }
     }
-    try {
-        let decodedData = base58Decode(address)
-        const versionByte = decodedData.slice(0, 1)
-        const payload = decodedData.slice(1, -4)
-        const checksumProvided = decodedData.slice(-4)
-        const doubleSha256 = await sha256HashSync(await sha256HashSync([...versionByte, ...payload]))
-        const checksumCalculated = doubleSha256.slice(0, 4)
-        const checksumValid = ((versionByte[0] === 0 || versionByte[0] === 5) &&
-            Array.from(checksumCalculated).every((byte, i) => byte === checksumProvided[i]))
-        if (!checksumValid) return null
-        return {
-          hash160: decodedData.slice(1, 21),
-          type: versionByte[0] === 5 ? 'p2sh' : 'p2pkh' 
-        }
-    } catch (err) {
-        console.error(err)
-        return null
-    }
+    let decodedData = base58Decode(address)
+    if (!decodedData) return null
+    const doubleSha256 = await sha256HashSync(await sha256HashSync(decodedData.slice(0, -4)))
+    const checksumValid = Array.from(doubleSha256.slice(0, 4)).every((byte, i) => byte === decodedData.slice(-4)[i])
+    if (!checksumValid) return null
+    const type = { '0': 'p2pkh', '5': 'p2sh', '65': 'tron' }[decodedData[0]]
+    if (!type) return null
+    return { hash160: decodedData.slice(1, 21), type }
 }
 
 function hexToUint8Array(hexString) {
@@ -230,7 +216,7 @@ function base58Decode(str) {
   for (let i = 0; i < str.length; i++) {
     const char = str[i];
     const value = alphabet.indexOf(char);
-    if (value === -1) throw new Error("Invalid Base58 character");
+    if (value === -1) return null;
     let carry = value;
     for (let j = 0; j < bytes.length; j++) {
       carry += bytes[j] * 58;
@@ -252,19 +238,15 @@ function base58Decode(str) {
 }
 
 function decodeBech32(address) {
-  if (typeof address !== 'string') throw new TypeError('address must be string');
+  if (typeof address !== 'string') return null
   const lower = address.toLowerCase()
-  if (lower !== address && address.toUpperCase() !== address) {
-    throw new Error('mixed case bech32 not allowed')
-  }
+  if (lower !== address && address.toUpperCase() !== address) return null
   address = lower
   const SEP = address.lastIndexOf('1')
-  if (SEP < 1 || SEP + 7 > address.length) throw new Error('invalid bech32 separator/length')
+  if (SEP < 1 || SEP + 7 > address.length) return null
   const hrp = address.slice(0, SEP)
   const dataPart = address.slice(SEP + 1)
-  if (!(hrp === 'bc' || hrp === 'tb' || hrp === 'bcrt')) {
-    throw new Error('unexpected HRP (expected bc/tb/bcrt)')
-  }
+  if (!(hrp === 'bc' || hrp === 'tb' || hrp === 'bcrt')) return null
   const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l'
   const CHARMAP = (() => {
     const map = new Int16Array(128).fill(-1)
@@ -274,7 +256,7 @@ function decodeBech32(address) {
   const data = new Uint8Array(dataPart.length)
   for (let i = 0; i < dataPart.length; i++) {
     const v = dataPart.charCodeAt(i) < 128 ? CHARMAP[dataPart.charCodeAt(i)] : -1
-    if (v === -1) throw new Error('invalid bech32 character')
+    if (v === -1) return null
     data[i] = v
   }
   function hrpExpand(h) {
@@ -302,14 +284,14 @@ function decodeBech32(address) {
   const pm = polymod(values)
   const encConst = pm === BECH32_CONST ? 'bech32' :
                    pm === BECH32M_CONST ? 'bech32m' : null
-  if (!encConst) throw new Error('invalid checksum')
+  if (!encConst) return null
   const payload = data.slice(0, data.length - 6)
-  if (payload.length === 0) throw new Error('empty payload')
+  if (payload.length === 0) return null
   const version = payload[0]
-  if (version > 16) throw new Error('invalid witness version')
+  if (version > 16) return null
   if ((version === 0 && encConst !== 'bech32') ||
       (version !== 0 && encConst !== 'bech32m')) {
-    throw new Error('wrong checksum type for this witness version')
+    return null
   }
 
   function convertBits(data5, from, to, pad) {
@@ -335,13 +317,9 @@ function decodeBech32(address) {
 
   const program5 = payload.slice(1)
   const program = convertBits(program5, 5, 8, false)
-  if (!program) throw new Error('invalid data padding')
-  if (program.length < 2 || program.length > 40) throw new Error('invalid program length')
-  if (version === 0 && !(program.length === 20 || program.length === 32)) {
-    throw new Error('v0 program must be 20 or 32 bytes')
-  }
-  if (program.length !== 20) {
-    throw new Error('address is not a 20-byte witness program (P2WPKH)')
-  }
+  if (!program) return null
+  if (program.length < 2 || program.length > 40) return null
+  if (version === 0 && !(program.length === 20 || program.length === 32)) return null
+  if (program.length !== 20) return null
   return program
 }

@@ -9,7 +9,6 @@ onmessage = async function (message) {
   }
   if (message.data.deriveCount != undefined) {
     DERIVE_ADDRESSES = Math.max(1, message.data.deriveCount)
-    console.log('DERIVE_ADDRESSES:', DERIVE_ADDRESSES)
   }
   const found = await bruteBtcAddr(mnemonicPartial, allWords, addrHash160list, addrTypes)
   postMessage(found)
@@ -56,17 +55,18 @@ async function bruteBtcAddr(mnemonicPartial, allWords, addrHash160list, addrType
       let privKeys = await derivePath(seed, network, coinType)
       for (let privKey of privKeys) {
         let hash = null
-        if (addrType === 'eth') { 
+        if (addrType === 'eth' || addrType === 'tron') {
           const pubKey = getPublicKey(privKey, false) 
           hash = (await keccak(pubKey.slice(1))).slice(12)
+        } else if (addrType === 'p2sh') {
+          const pubKey = getPublicKey(privKey)
+          reedemScript.set(await hash160(pubKey), 2)
+          hash = await hash160(reedemScript)
         } else {
           const pubKey = getPublicKey(privKey)
           hash = await hash160(pubKey)
         }
-        if (addrType === 'p2sh') {
-          reedemScript.set(hash, 2)
-          hash = await hash160(reedemScript)
-        }
+
         for (let addrHash of addrHash160list) {
           if (addrHash[0] == hash[0] && addrHash[1] == hash[1] && bytesToHex(hash) === bytesToHex(addrHash)) {
             found = parts[0] + allWords[(await getValidIndexes(allWords, parts))[i]] + parts[1];
@@ -171,11 +171,13 @@ let mcryptoKey = null;
 crypto.subtle.importKey("raw", BITCOIN_SEED, { name: "HMAC", hash: "SHA-512" }, false, ["sign"]).then(key => mcryptoKey = key);
 
 const DATABUF = new Uint8Array(1 + 32 + 4);
+
 const ADDRTYPEMAP = {
   'p2wphk': [84, 0],
   'p2pkh': [44, 0],
   'p2sh': [49, 0],
-  'eth': [44, 60]
+  'eth': [44, 60],
+  'tron': [44, 195],
 }
 async function derivePath(seed, network, coinType) {
   const msignature = await crypto.subtle.sign("HMAC", mcryptoKey, seed)

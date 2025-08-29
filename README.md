@@ -25,7 +25,7 @@ bc1q0esjzsh4et4wxrfumglc97fpksvmwp8dwuwdxx
 - [x] Bruteforce settings
 - [x] Ethereum wallets
 - [x] BSC wallets
-- [ ] Tron wallets
+- [x] Tron wallets
 - [ ] Solana wallets
 - [ ] WebGPU backend
 - [ ] Other bip39 languages
