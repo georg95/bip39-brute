@@ -16,16 +16,21 @@ bc1q0esjzsh4et4wxrfumglc97fpksvmwp8dwuwdxx
 
 - [x] Working demo
 - [x] Multithreading CPU
-- [x] Legacy bitcoin addresses
-- [x] 12-words mnemonic
 - [x] Multiple derivation addresses
-- [x] P2SH/Segwit bitcoin addresses
-- [x] 15/18/24-words mnemonic
+- [x] Legacy/P2SH/Segwit bitcoin addresses
+- [x] 12/15/18/24-words mnemonic
 - [x] More seed templates
 - [x] Bruteforce settings
 - [x] Ethereum wallets
 - [x] BSC wallets
 - [x] Tron wallets
-- [ ] Solana wallets
 - [ ] WebGPU backend
-- [ ] Other bip39 languages
+  - [ ] SHA-256
+  - [ ] SHA-512
+  - [ ] PBKDF2-HMAC-512
+  - [ ] secp256k1
+  - [ ] ripemd160
+  - [ ] Mnemonic checksum
+  - [ ] Mnemonic to seed
+  - [ ] Mnemonic to seeds batch
+  - [ ] Derive path
