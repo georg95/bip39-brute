@@ -26,7 +26,7 @@ bc1q0esjzsh4et4wxrfumglc97fpksvmwp8dwuwdxx
 - [x] Tron wallets
 - [ ] WebGPU backend
   - [ ] SHA-256
-  - [ ] SHA-512
+  - [x] SHA-512
   - [ ] PBKDF2-HMAC-512
   - [ ] secp256k1
   - [ ] ripemd160
