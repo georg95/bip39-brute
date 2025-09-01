@@ -19,22 +19,11 @@ const K: array<u32,160> = array<u32,160>(
     0x6f067aa,  0x72176fba, 0xa637dc5,  0xa2c898a6, 0x113f9804, 0xbef90dae, 0x1b710b35, 0x131c471b,
     0x28db77f5, 0x23047d84, 0x32caab7b, 0x40c72493, 0x3c9ebe0a, 0x15c9bebc, 0x431d67c4, 0x9c100d4c,
     0x4cc5d4be, 0xcb3e42b6, 0x597f299c, 0xfc657e2a, 0x5fcb6fab, 0x3ad6faec, 0x6c44198c, 0x4a475817);
-const IV = array<u32,16>(
-    0x6a09e667, 0xf3bcc908, 0xbb67ae85, 0x84caa73b,
-    0x3c6ef372, 0xfe94f82b, 0xa54ff53a, 0x5f1d36f1,
-    0x510e527f, 0xade682d1, 0x9b05688c, 0x2b3e6c1f,
-    0x1f83d9ab, 0xfb41bd6b, 0x5be0cd19, 0x137e2179,
-);
 
-@group(0) @binding(0) var<storage, read> input: array<u32>;
-@group(0) @binding(1) var<storage, read_write> output: array<u32>;
-@compute @workgroup_size(1)
-fn main() {
+// out - array<u32> ptr
+fn sha512(inp: ptr<function, array<u32, 32>>, out: ptr<function, array<u32, 16>>, IV: ptr<function, array<u32, 16>>) {
   var W: array<u32, 160>;
-  W[0] = 0x80000000u;
-  W[1] = 0x00000000u;
-  // TODO while (i < 32) : (i += 1) W[i] = input[i];
-  for (var i: u32 =  1u; i <  32u; i = i + 1u) { W[i] = 0u; }
+  for (var i: u32 =  0u; i <  32u; i = i + 1u) { W[i] = inp[i]; }
   for (var i: u32 = 32u; i < 160u; i = i + 2u) {
       var xhi = W[i - 4];
       var xlo = W[i - 3];
@@ -121,20 +110,68 @@ fn main() {
   hlo += IV[15];
   hhi += IV[14] + select(0u, 1u, hlo < IV[15]);
 
-  output[0] = ahi;
-  output[1] = alo;
-  output[2] = bhi;
-  output[3] = blo;
-  output[4] = chi;
-  output[5] = clo;
-  output[6] = dhi;
-  output[7] = dlo;
-  output[8] = ehi;
-  output[9] = elo;
-  output[10] = fhi;
-  output[11] = flo;
-  output[12] = ghi;
-  output[13] = glo;
-  output[14] = hhi;
-  output[15] = hlo;
+  out[0] = ahi;
+  out[1] = alo;
+  out[2] = bhi;
+  out[3] = blo;
+  out[4] = chi;
+  out[5] = clo;
+  out[6] = dhi;
+  out[7] = dlo;
+  out[8] = ehi;
+  out[9] = elo;
+  out[10] = fhi;
+  out[11] = flo;
+  out[12] = ghi;
+  out[13] = glo;
+  out[14] = hhi;
+  out[15] = hlo;
+}
+
+@group(0) @binding(0) var<storage, read> input: array<u32>;
+@group(0) @binding(1) var<storage, read_write> output: array<u32>;
+
+@compute @workgroup_size(1)
+fn main() {
+  var IV = array<u32,16>(
+      0x6a09e667, 0xf3bcc908, 0xbb67ae85, 0x84caa73b,
+      0x3c6ef372, 0xfe94f82b, 0xa54ff53a, 0x5f1d36f1,
+      0x510e527f, 0xade682d1, 0x9b05688c, 0x2b3e6c1f,
+      0x1f83d9ab, 0xfb41bd6b, 0x5be0cd19, 0x137e2179,
+  );
+  var tmp_buf: array<u32, 32>;
+  var seed1: array<u32, 16>;
+  var seed2: array<u32, 16>;
+  for (var i: u32 = 0u; i < 32u; i += 1u) { tmp_buf[i] = input[i] ^ 0x36363636; }
+  sha512(&tmp_buf, &seed1, &IV);
+  for (var i: u32 = 0u; i < 32u; i += 1u) { tmp_buf[i] = input[i] ^ 0x5c5c5c5c; }
+  sha512(&tmp_buf, &seed2, &IV);
+  for (var i = 0; i < 32; i += 1) { tmp_buf[i] = 0; }
+  tmp_buf[0] = 0x6d6e656d; // mnem
+  tmp_buf[1] = 0x6f6e6963; // onic
+  tmp_buf[2] = 1;
+  tmp_buf[3] = 0x80000000;
+  tmp_buf[31] = 140 * 8;
+  var new_block: array<u32, 16>;
+  sha512(&tmp_buf, &new_block, &seed1);
+
+  for (var i = 0; i < 16; i += 1) { tmp_buf[i] = new_block[i]; }
+  for (var i = 16; i < 32; i += 1) { tmp_buf[i] = 0; }
+  tmp_buf[16] = 0x80000000;
+  tmp_buf[31] = 192 * 8;
+  var dk: array<u32, 16>;
+  sha512(&tmp_buf, &dk, &seed2);
+  for (var i = 0; i < 32; i += 1) { new_block[i] = dk[i]; }
+
+  for (var i = 1; i < 2048; i += 1) {
+      for (var i = 0; i < 16; i += 1) { tmp_buf[i] = new_block[i]; }
+      sha512(&tmp_buf, &new_block, &seed1);
+      for (var i = 0; i < 16; i += 1) { tmp_buf[i] = new_block[i]; }
+      sha512(&tmp_buf, &new_block, &seed2);
+      for (var i = 0; i < 16; i += 1) { dk[i] ^= new_block[i]; }
+  }
+
+  for (var i = 0; i < 16; i += 1) {
+    output[i] = dk[i];
+  }
 }

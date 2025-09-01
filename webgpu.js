@@ -1,18 +1,36 @@
-async function test() {
-    const infer = await webGPUinit()
-    const inp = new Uint32Array(1024).fill(1)
-    const out = await infer(inp)
-    const sha512_EMPTY = "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e"
-    const resHash = Array.from(out.slice(0, 16)).map(x => x.toString(16).padStart(8, '0')).join('')
-    console.log(resHash)
-    console.log(sha512_EMPTY)
-    if (resHash === sha512_EMPTY) {
-        console.log('✅ sha512 wgsl PASSED')
-    } else {
-        console.log('❌ sha512 wgsl FAILED')
+function bufUint32LESwap(buf) {
+    for (let i = 0; i + 3 < buf.length; i += 4) {
+        const a = buf[i]
+        const b = buf[i + 1]
+        const c = buf[i + 2]
+        const d = buf[i + 3]
+
+        buf[i] = d
+        buf[i + 1] = c
+        buf[i + 2] = b
+        buf[i + 3] = a
     }
 }
-test()
+
+async function testPbkdf2() {
+    const inp = new Uint32Array(1024).fill(0)
+    var strbuf = new Uint8Array(inp.buffer, inp.byteOffset, inp.byteLength)
+    strbuf.set(new TextEncoder().encode("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"))
+    bufUint32LESwap(strbuf)
+
+    const infer = await webGPUinit()
+    const out = await infer('wgsl/pbkdf2.wgsl', inp)
+    const pbkdf2 = "5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4"
+    const resHash = Array.from(out.slice(0, 16)).map(x => x.toString(16).padStart(8, '0')).join('')
+    console.log(resHash)
+    console.log(pbkdf2)
+    if (resHash === pbkdf2) {
+        console.log('✅ pbkdf2 wgsl PASSED')
+    } else {
+        console.log('❌ pbkdf2 wgsl FAILED')
+    }
+}
+testPbkdf2()
 
 async function webGPUinit() {
     assert(window.isSecureContext, 'WebGPU disabled for http:// protocol, works only on https://')
@@ -38,12 +56,12 @@ async function webGPUinit() {
         usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
     });
 
-    async function inference(input) {
+    async function inference(shaderURL, input) {
         assert(input?.length === BUF_SIZE / 4, `expected input size to be ${BUF_SIZE / 4}, got ${input?.length}`)
         device.queue.writeBuffer(inpBuffer, 0, input)
         const commandEncoder = device.createCommandEncoder()
         const passEncoder = commandEncoder.beginComputePass()
-        const { bindGroup, pipeline } = await runShader()
+        const { bindGroup, pipeline } = await runShader(shaderURL)
         passEncoder.setBindGroup(0, bindGroup)
         passEncoder.setPipeline(pipeline)
         passEncoder.dispatchWorkgroups(1)
@@ -57,7 +75,7 @@ async function webGPUinit() {
         return data
     }
 
-    async function runShader() {
+    async function runShader(shaderURL) {
         const bindGroupLayout = device.createBindGroupLayout({
             entries: [
                 {
@@ -88,7 +106,7 @@ async function webGPUinit() {
             }),
             compute: {
                 module: device.createShaderModule({
-                    code: await fetch('wgsl/sha512.wgsl').then(r => r.text()),
+                    code: await fetch(shaderURL).then(r => r.text()),
                 }),
                 entryPoint: "main",
             },
