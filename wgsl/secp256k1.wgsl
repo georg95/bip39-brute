@@ -240,17 +240,230 @@ fn mmul(r: ptr<function, array<u32, 10>>, a: ptr<function, array<u32, 10>>, b: p
   r[2] = d.lo;
 }
 
+
+fn msqr(r: ptr<function, array<u32, 10>>, a: ptr<function, array<u32, 10>>) {
+  // TODO port faster version
+  mmul(r, a, a);
+}
+
+fn madd(r: ptr<function, array<u32, 10>>, a: ptr<function, array<u32, 10>>) {
+  r[0] += a[0];
+  r[1] += a[1];
+  r[2] += a[2];
+  r[3] += a[3];
+  r[4] += a[4];
+  r[5] += a[5];
+  r[6] += a[6];
+  r[7] += a[7];
+  r[8] += a[8];
+  r[9] += a[9];
+}
+
+fn mmulint(r: ptr<function, array<u32, 10>>, a: u32) {
+  r[0] *= a;
+  r[1] *= a;
+  r[2] *= a;
+  r[3] *= a;
+  r[4] *= a;
+  r[5] *= a;
+  r[6] *= a;
+  r[7] *= a;
+  r[8] *= a;
+  r[9] *= a;
+}
+fn mhalf(r: ptr<function, array<u32, 10>>) {
+    var t0 = r[0];
+    var t1 = r[1];
+    var t2 = r[2];
+    var t3 = r[3];
+    var t4 = r[4];
+    var t5 = r[5];
+    var t6 = r[6];
+    var t7 = r[7];
+    var t8 = r[8];
+    var t9 = r[9];
+    var mask = (0-(t0 & 1)) >> 6;
+
+    t0 += 0x3FFFC2F & mask;
+    t1 += 0x3FFFFBF & mask;
+    t2 += mask;
+    t3 += mask;
+    t4 += mask;
+    t5 += mask;
+    t6 += mask;
+    t7 += mask;
+    t8 += mask;
+    t9 += mask >> 4;
+
+    r[0] = (t0 >> 1) + ((t1 & 1) << 25);
+    r[1] = (t1 >> 1) + ((t2 & 1) << 25);
+    r[2] = (t2 >> 1) + ((t3 & 1) << 25);
+    r[3] = (t3 >> 1) + ((t4 & 1) << 25);
+    r[4] = (t4 >> 1) + ((t5 & 1) << 25);
+    r[5] = (t5 >> 1) + ((t6 & 1) << 25);
+    r[6] = (t6 >> 1) + ((t7 & 1) << 25);
+    r[7] = (t7 >> 1) + ((t8 & 1) << 25);
+    r[8] = (t8 >> 1) + ((t9 & 1) << 25);
+    r[9] = (t9 >> 1);
+}
+fn mnegate(r: ptr<function, array<u32, 10>>, a: ptr<function, array<u32, 10>>, m: u32) {
+  r[0] = 0x3FFFC2F * 2 * (m + 1) - a[0];
+  r[1] = 0x3FFFFBF * 2 * (m + 1) - a[1];
+  r[2] = 0x3FFFFFF * 2 * (m + 1) - a[2];
+  r[3] = 0x3FFFFFF * 2 * (m + 1) - a[3];
+  r[4] = 0x3FFFFFF * 2 * (m + 1) - a[4];
+  r[5] = 0x3FFFFFF * 2 * (m + 1) - a[5];
+  r[6] = 0x3FFFFFF * 2 * (m + 1) - a[6];
+  r[7] = 0x3FFFFFF * 2 * (m + 1) - a[7];
+  r[8] = 0x3FFFFFF * 2 * (m + 1) - a[8];
+  r[9] = 0x03FFFFF * 2 * (m + 1) - a[9];
+}
+
+fn mnormtozero(r: ptr<function, array<u32, 10>>) -> bool {
+  var t0 = r[0];
+  var t1 = r[1];
+  var t2 = r[2];
+  var t3 = r[3];
+  var t4 = r[4];
+  var t5 = r[5];
+  var t6 = r[6];
+  var t7 = r[7];
+  var t8 = r[8];
+  var t9 = r[9];
+  var z0: u32 = 0;
+  var z1: u32 = 0;
+  var x = t9 >> 22; t9 &= 0x03FFFFF;
+  t0 += x * 0x3D1; t1 += (x << 6);
+  t1 += (t0 >> 26); t0 &= 0x3FFFFFF; z0  = t0; z1  = t0 ^ 0x3D0;
+  t2 += (t1 >> 26); t1 &= 0x3FFFFFF; z0 |= t1; z1 &= t1 ^ 0x40;
+  t3 += (t2 >> 26); t2 &= 0x3FFFFFF; z0 |= t2; z1 &= t2;
+  t4 += (t3 >> 26); t3 &= 0x3FFFFFF; z0 |= t3; z1 &= t3;
+  t5 += (t4 >> 26); t4 &= 0x3FFFFFF; z0 |= t4; z1 &= t4;
+  t6 += (t5 >> 26); t5 &= 0x3FFFFFF; z0 |= t5; z1 &= t5;
+  t7 += (t6 >> 26); t6 &= 0x3FFFFFF; z0 |= t6; z1 &= t6;
+  t8 += (t7 >> 26); t7 &= 0x3FFFFFF; z0 |= t7; z1 &= t7;
+  t9 += (t8 >> 26); t8 &= 0x3FFFFFF; z0 |= t8; z1 &= t8;
+                                     z0 |= t9; z1 &= t9 ^ 0x3C00000;
+  return (z0 == 0) || (z1 == 0x3FFFFFF);
+}
+
+struct normalPoint {
+  x: array<u32, 10>,
+  y: array<u32, 10>,
+  z: array<u32, 10>,
+  infinity: bool
+};
+struct affinePoint {
+  x: array<u32, 10>,
+  y: array<u32, 10>,
+};
+
+fn copy(r: ptr<function, array<u32, 10>>, a: ptr<function, array<u32, 10>>) {
+  r[0] = a[0];
+  r[1] = a[1];
+  r[2] = a[2];
+  r[3] = a[3];
+  r[4] = a[4];
+  r[5] = a[5];
+  r[6] = a[6];
+  r[7] = a[7];
+  r[8] = a[8];
+  r[9] = a[9];
+}
+fn set1(r: ptr<function, array<u32, 10>>) {
+  r[0] = 1;
+  r[1] = 0;
+  r[2] = 0;
+  r[3] = 0;
+  r[4] = 0;
+  r[5] = 0;
+  r[6] = 0;
+  r[7] = 0;
+  r[8] = 0;
+  r[9] = 0;
+}
+
+fn secp256k1_add(r: ptr<function, normalPoint>, a: ptr<function, normalPoint>, b: ptr<function, affinePoint>) {
+    var zz: array<u32, 10>;
+    var u1: array<u32, 10>;
+    var u2: array<u32, 10>;
+    var s1: array<u32, 10>;
+    var s2: array<u32, 10>;
+    var t: array<u32, 10>;
+    var tt: array<u32, 10>;
+    var m: array<u32, 10>;
+    var n: array<u32, 10>;
+    var q: array<u32, 10>;
+    var rr: array<u32, 10>;
+    var m_alt: array<u32, 10>;
+    var rr_alt: array<u32, 10>;
+    var tmp: array<u32, 10>;
+    var degenerate: bool;
+
+    msqr(&zz, &a.z);
+    copy(&u1, &a.x);
+    mmul(&u2, &b.x, &zz);
+    copy(&s1, &a.y);
+    mmul(&s2, &b.y, &zz);
+    copy(&tmp, &s2);
+    mmul(&s2, &tmp, &a.z);
+    copy(&t, &u1); madd(&t, &u2);
+    copy(&m, &s1); madd(&m, &s2);
+    msqr(&rr, &t);
+    mnegate(&m_alt, &u2, 1);
+    mmul(&tt, &u1, &m_alt);
+    madd(&rr, &tt);
+    degenerate = mnormtozero(&m);
+    copy(&rr_alt, &s1);
+    mmulint(&rr_alt, 2);
+    madd(&m_alt, &u1);
+    if (!degenerate) { copy(&rr_alt, &rr); }
+    if (!degenerate) { copy(&m_alt, &m); }
+    msqr(&n, &m_alt);
+    mnegate(&q, &t, 5);
+    copy(&tmp, &q);
+    mmul(&q, &tmp, &n);
+    copy(&tmp, &n);
+    msqr(&n, &tmp);
+    if (degenerate) { copy(&n, &m); }
+    msqr(&t, &rr_alt);
+    mmul(&r.z, &a.z, &m_alt);
+    madd(&t, &q);
+    copy(&r.x, &t);
+    mmulint(&t, 2);
+    madd(&t, &q);
+    copy(&tmp, &t);
+    mmul(&t, &tmp, &rr_alt);
+    madd(&t, &n);
+    mnegate(&r.y, &t, 6);
+    mhalf(&r.y);
+    if (a.infinity) {
+      copy(&r.x, &b.x);
+      copy(&r.y, &b.y);
+      set1(&r.z);
+    }
+    r.infinity = mnormtozero(&r.z);
+}
+
 @group(0) @binding(0) var<storage, read> input: array<u32>;
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;
 @compute @workgroup_size(1)
 fn main() {
-  var G256x: array<u32, 8> = array<u32, 8>(0xeb9a9787, 0x92f76cc4, 0x59599680, 0x89bdde81, 0xbbd3788d, 0x74669716, 0xef5ba060, 0xdd3625fa);
+  var G256x: array<u32, 8> = array<u32, 8>(0xeb9a9787, 0x92f76cc4, 0x59599680, 0x89bdde81, 0xbbd3788d, 0x74669716, 0xef5ba060, 0xdd3625fa);         
+  var G256y: array<u32, 8> = array<u32, 8>(0xc644a573, 0x37f68d00, 0x28833959, 0x94146198, 0x045731ca, 0x61da2501, 0x520e30d4, 0x7a188fa3);
   var G256x10: array<u32, 10>;
-  var G257x10: array<u32, 10>;
+  var G256y10: array<u32, 10>;
+  var G256z10: array<u32, 10>;
   load26x10(&G256x, &G256x10);
-  mmul(&G257x10, &G256x10, &G256x10);
+  load26x10(&G256y, &G256y10);
+  set1(&G256z10);
 
-  for (var i: u32 = 0; i < 10; i++) {
-    output[i] = G257x10[i];
-  }
+  var pt1 = normalPoint(G256x10, G256y10, G256z10, false);
+  var pt2 = affinePoint(G256x10, G256y10);
+  var pt3: normalPoint;
+  secp256k1_add(&pt3, &pt1, &pt2);
+
+  for (var i: u32 = 0; i < 10; i++) { output[i] = pt3.x[i]; }
+  for (var i: u32 = 0; i < 10; i++) { output[i+10] = pt3.y[i]; }
+  for (var i: u32 = 0; i < 10; i++) { output[i+20] = pt3.z[i]; }
 }
