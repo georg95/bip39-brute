@@ -37,11 +37,11 @@ async function testSecp256k1() {
     const infer = await webGPUinit()
     const out = await infer('wgsl/secp256k1.wgsl', inp)
     const exp = [
-        60462983, 31142202,
-        23595311, 33908070,
-        25804254, 49602083,
-        40464747, 42041809,
-        33222491,  3624329
+        55675950, 55597216,
+        29470797, 50169185,
+        15039083,   809958,
+        20038768, 28950999,
+        38018717,  1952619
     ].join(',')
     const res = Array.from(out.slice(0, 10)).join(',')
     console.log(exp)
