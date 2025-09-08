@@ -30,7 +30,29 @@ async function testPbkdf2() {
         console.log('❌ pbkdf2 wgsl FAILED')
     }
 }
-testPbkdf2()
+// testPbkdf2()
+
+async function testSecp256k1() {
+    const inp = new Uint32Array(1024).fill(0)
+    const infer = await webGPUinit()
+    const out = await infer('wgsl/secp256k1.wgsl', inp)
+    const exp = [
+        60462983, 31142202,
+        23595311, 33908070,
+        25804254, 49602083,
+        40464747, 42041809,
+        33222491,  3624329
+    ].join(',')
+    const res = Array.from(out.slice(0, 10)).join(',')
+    console.log(exp)
+    console.log(res)
+    if (exp === res) {
+        console.log('✅ secp256k1 wgsl PASSED')
+    } else {
+        console.log('❌ secp256k1 wgsl FAILED')
+    }
+}
+testSecp256k1()
 
 async function webGPUinit() {
     assert(window.isSecureContext, 'WebGPU disabled for http:// protocol, works only on https://')
