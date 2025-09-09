@@ -1,5 +1,3 @@
-
-
 let allWords = []
 let DERIVE_ADDRESSES = 1
 onmessage = async function (message) {
@@ -420,6 +418,15 @@ class Point {
         Z3 = M(Z3 + t0); // step 40
         return new Point(X3, Y3, Z3);
     }
+    toAffine() {
+        const { X: x, Y: y, Z: z } = this;
+        if (z === 1n)
+            return { x, y };
+        const iz = invert(z, P);
+        if (M(z * iz) !== 1n)
+            err('inverse invalid');
+        return { x: M(x * iz), y: M(y * iz) };
+    }
     negate() {
         return new Point(this.X, M(-this.Y), this.Z);
     }
@@ -440,33 +447,52 @@ const getPublicKey = (privKey, isCompressed=true) => {
     return concatBytes(u8of(0x04), x32b, y32b);
 };
 const W = 8; // W is window size
-const scalarBits = 256;
-const pwindows = Math.ceil(scalarBits / W) + 1; // 33 for W=8, NOT 32 - see wNAF loop
-const pwindowSize = 2 ** (W - 1); // 128 for W=8
-const precompute = () => {
+export const precompute = (W, onBatch) => {
+    function toAff(pt) {
+      const { x, y } = pt.toAffine()
+      return new Point(x, y, 1n)
+    }
+    function batchAff(pointsBatch) {
+      let acc = 1n
+      const scratch = [1n].concat(pointsBatch.map(ni => acc = (acc * ni.Z) % P))
+      let inv = invert(acc)
+      const Zinv = new Array(pointsBatch.length);
+      for (let i = pointsBatch.length - 1; i >= 0; i--) {
+        Zinv[i] = (scratch[i] * inv) % P
+        inv = (inv * pointsBatch[i].Z) % P
+      }
+      return Zinv.map((iz, i) => new Point(M(pointsBatch[i].X * iz), M(pointsBatch[i].Y * iz), 1n));
+    }
     const points = [];
     let p = G;
     let b = p;
-    for (let w = 0; w < pwindows; w++) {
-        b = p;
-        points.push(b);
-        for (let i = 1; i < pwindowSize; i++) {
+    for (let w = 0; w < Math.ceil(256 / W) + 1; w++) {
+        b = p
+        var pointsBatch = []
+        pointsBatch.push(b);
+        for (let i = 1; i < 2 ** (W - 1); i++) {
             b = b.add(p);
-            points.push(b);
-        } // i=1, bc we skip 0
-        p = b.add(b);
+            pointsBatch.push(b);
+        }
+        if (onBatch) {
+          onBatch(batchAff(pointsBatch), w)
+        } else {
+          points = points.concat(batchAff(pointsBatch))
+        }
+        p = toAff(b.add(b));
     }
     return points;
 };
-let Gpows = precompute(); // precomputes for base point G
+let Gpows; // precomputes for base point G
 
 const wNAF = (n) => {
-    const comp = Gpows;
+    if (!Gpows) { Gpows = precompute(W) }
     let p = I;
     const mask = BigInt(2 ** W - 1); // 255 for W=8 == mask 0b11111111
     const shiftBy = BigInt(W); // 8 for W=8
     const ONE = 1n;
-    const WIN_SIZE = pwindowSize;
+    const WIN_SIZE = 2 ** (W - 1);
+    const pwindows = Math.ceil(256 / W) + 1;
     for (let w = 0; w < pwindows; w++) {
         let wbits = Number(n & mask); // extract W bits.
         n >>= shiftBy; // shift number by W bits.
@@ -477,7 +503,7 @@ const wNAF = (n) => {
         const off = w * WIN_SIZE;
         if (wbits !== 0) {
             const offP = off + Math.abs(wbits) - 1;
-            p = p.add(wbits < 0 ? comp[offP].negate() : comp[offP]); // bits are 1: add to result point
+            p = p.add(wbits < 0 ? Gpows[offP].negate() : Gpows[offP]); // bits are 1: add to result point
         }
     }
     return p; // return both real and fake points for JIT

@@ -1,3 +1,5 @@
+import { precompute } from './worker.js';
+
 function bufUint32LESwap(buf) {
     for (let i = 0; i + 3 < buf.length; i += 4) {
         const a = buf[i]
@@ -32,9 +34,24 @@ async function testPbkdf2() {
 }
 // testPbkdf2()
 
+function BigToU32(n) {
+    const hex = n.toString(16).padStart(64, '0')
+    return hex.match(/.{1,8}/g).map(x => parseInt(x, 16)).reverse()
+}
 async function testSecp256k1() {
-    const inp = new Uint32Array(1024).fill(0)
-    const infer = await webGPUinit()
+    const PRECOMPUTE_WINDOW = 8
+    const PRECOMPUTE_SIZE = 2 ** (PRECOMPUTE_WINDOW - 1) * (Math.ceil(256 / PRECOMPUTE_WINDOW) + 1)
+    const inp = new Uint32Array(PRECOMPUTE_SIZE / 4).fill(0)
+    precompute(PRECOMPUTE_WINDOW, (batch, i) => {
+        batch.forEach(({X, Y}, j) => {
+            const index = i * batch.length + j
+            const xx = BigToU32(X)
+            for (var x = 0; x < 8; x++) { inp[index*16 + x] = xx[x] }
+            const yy = BigToU32(Y)
+            for (var y = 0; y < 8; y++) { inp[index*16 + 8 + y] = yy[y] }
+        })
+    })
+    const infer = await webGPUinit(PRECOMPUTE_SIZE)
     const out = await infer('wgsl/secp256k1.wgsl', inp)
     const exp = [
         // x
@@ -67,17 +84,17 @@ async function testSecp256k1() {
 }
 testSecp256k1()
 
-async function webGPUinit() {
+async function webGPUinit(INP_SIZE) {
     assert(window.isSecureContext, 'WebGPU disabled for http:// protocol, works only on https://')
     assert(navigator.gpu, 'Browser not support WebGPU')
-     const adapter = await navigator.gpu.requestAdapter()
+    const adapter = await navigator.gpu.requestAdapter()
     const device = await adapter.requestDevice()
     device.lost.then(()=>{ throw Error("WebGPU logical device was lost.") })
 
     const BUF_SIZE = 1024 * 4
 
     const inpBuffer = device.createBuffer({
-        size: BUF_SIZE,
+        size: INP_SIZE || BUF_SIZE,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
     })
 
@@ -92,7 +109,7 @@ async function webGPUinit() {
     });
 
     async function inference(shaderURL, input) {
-        assert(input?.length === BUF_SIZE / 4, `expected input size to be ${BUF_SIZE / 4}, got ${input?.length}`)
+        assert(input?.length === (INP_SIZE || BUF_SIZE) / 4, `expected input size to be ${BUF_SIZE / 4}, got ${input?.length}`)
         device.queue.writeBuffer(inpBuffer, 0, input)
         const commandEncoder = device.createCommandEncoder()
         const passEncoder = commandEncoder.beginComputePass()
