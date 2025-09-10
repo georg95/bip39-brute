@@ -63,7 +63,12 @@ fn shr64_22(r: u64) -> u64 {
   return u64(r.hi >> 22, ((r.lo >> 22) | ((r.hi << 10) & 0xfffffc00)));
 }
 
-fn mmul(r: ptr<function, array<u32, 10>>, a: ptr<function, array<u32, 10>>, b: ptr<function, array<u32, 10>>) {
+fn mmul2(r: ptr<function, array<u32, 10>>, a: ptr<function, array<u32, 10>>, b: ptr<function, array<u32, 10>>) {
+  copy(r, a);
+  mmul(r, b);
+}
+
+fn mmul(a: ptr<function, array<u32, 10>>, b: ptr<function, array<u32, 10>>) {
   let MASK = 0x3FFFFFFu;
   let R0 = 0x3D10u;
   let R1 = 0x400u;
@@ -214,36 +219,42 @@ fn mmul(r: ptr<function, array<u32, 10>>, a: ptr<function, array<u32, 10>>, b: p
 
   let u8 = d.lo & MASK; d = shr64_26(d); c = muladd64(c, u8, R0);
 
-  r[3] = t3;
-  r[4] = t4;
-  r[5] = t5;
-  r[6] = t6;
-  r[7] = t7;
-  r[8] = c.lo & MASK;
+  a[3] = t3;
+  a[4] = t4;
+  a[5] = t5;
+  a[6] = t6;
+  a[7] = t7;
+  a[8] = c.lo & MASK;
   
   c = shr64_26(c); c = muladd64(c, u8, R1);
   c = add64(u64(0, t9), add64(c, mul64_c(d, R0)));
 
-  r[9] = c.lo & (MASK >> 4);
+  a[9] = c.lo & (MASK >> 4);
   c = shr64_22(c); c = add64(c, mul64_c(d, R1 << 4));
   d = add64(mul64_c(c, R0 >> 4), u64(0, t0));
 
-  r[0] = d.lo & MASK;
+  a[0] = d.lo & MASK;
   d = shr64_26(d);
   
   d = add64(d, add64(mul64_c(c, R1 >> 4), u64(0, t1 )));
   
-  r[1] = d.lo & MASK;
+  a[1] = d.lo & MASK;
   d = shr64_26(d);
   d = add64(d, u64(0, t2));
   
-  r[2] = d.lo;
+  a[2] = d.lo;
 }
 
 
 fn msqr(r: ptr<function, array<u32, 10>>, a: ptr<function, array<u32, 10>>) {
   // TODO port faster version
-  mmul(r, a, a);
+  mmul2(r, a, a);
+}
+fn msqr2(r: ptr<function, array<u32, 10>>) {
+  // TODO port faster version
+  var a: array<u32, 10>;
+  copy(&a, r);
+  mmul2(r, &a, &a);
 }
 
 fn madd(r: ptr<function, array<u32, 10>>, a: ptr<function, array<u32, 10>>) {
@@ -414,16 +425,16 @@ fn secp256k1_add(r: ptr<function, normalPoint>, a: ptr<function, normalPoint>, b
 
     msqr(&zz, &a.z);
     copy(&u1, &a.x);
-    mmul(&u2, &b.x, &zz);
+    mmul2(&u2, &b.x, &zz);
     copy(&s1, &a.y);
-    mmul(&s2, &b.y, &zz);
+    mmul2(&s2, &b.y, &zz);
     copy(&tmp, &s2);
-    mmul(&s2, &tmp, &a.z);
+    mmul2(&s2, &tmp, &a.z);
     copy(&t, &u1); madd(&t, &u2);
     copy(&m, &s1); madd(&m, &s2);
     msqr(&rr, &t);
     mnegate(&m_alt, &u2, 1);
-    mmul(&tt, &u1, &m_alt);
+    mmul2(&tt, &u1, &m_alt);
     madd(&rr, &tt);
     degenerate = mnormtozero(&m);
     copy(&rr_alt, &s1);
@@ -434,18 +445,18 @@ fn secp256k1_add(r: ptr<function, normalPoint>, a: ptr<function, normalPoint>, b
     msqr(&n, &m_alt);
     mnegate(&q, &t, 5);
     copy(&tmp, &q);
-    mmul(&q, &tmp, &n);
+    mmul2(&q, &tmp, &n);
     copy(&tmp, &n);
     msqr(&n, &tmp);
     if (degenerate) { copy(&n, &m); }
     msqr(&t, &rr_alt);
-    mmul(&r.z, &a.z, &m_alt);
+    mmul2(&r.z, &a.z, &m_alt);
     madd(&t, &q);
     copy(&r.x, &t);
     mmulint(&t, 2);
     madd(&t, &q);
     copy(&tmp, &t);
-    mmul(&t, &tmp, &rr_alt);
+    mmul2(&t, &tmp, &rr_alt);
     madd(&t, &n);
     mnegate(&r.y, &t, 6);
     mhalf(&r.y);
@@ -455,6 +466,62 @@ fn secp256k1_add(r: ptr<function, normalPoint>, a: ptr<function, normalPoint>, b
       set1(&r.z);
     }
     r.infinity = mnormtozero(&r.z);
+}
+fn minv(r: ptr<function, array<u32, 10>>) {
+    var x2: array<u32, 10>;
+    var x3: array<u32, 10>;
+    var x6: array<u32, 10>;
+    var x9: array<u32, 10>;
+    var x11: array<u32, 10>;
+    var x22: array<u32, 10>;
+    var x44: array<u32, 10>;
+    var x88: array<u32, 10>;
+    var x176: array<u32, 10>;
+    var x220: array<u32, 10>;
+    var x223: array<u32, 10>;
+    var t1: array<u32, 10>;
+
+    msqr(&x2, r);
+    mmul(&x2, r);
+    msqr(&x3, &x2);
+    mmul(&x3, r);
+
+    copy(&x6, &x3);
+    for (var j=0; j<3; j++) { msqr2(&x6); }
+    mmul(&x6, &x3);
+    copy(&x9, &x6);
+    for (var j=0; j<3; j++) { msqr2(&x9); }
+    mmul(&x9, &x3);
+    copy(&x11, &x9);
+    for (var j=0; j<2; j++) { msqr2(&x11); }
+    mmul(&x11, &x2);
+    copy(&x22, &x11);
+    for (var j=0; j<11; j++) { msqr2(&x22); }
+    mmul(&x22, &x11);
+    copy(&x44, &x22);
+    for (var j=0; j<22; j++) { msqr2(&x44); }
+    mmul(&x44, &x22);
+    copy(&x88, &x44);
+    for (var j=0; j<44; j++) { msqr2(&x88); }
+    mmul(&x88, &x44);
+    copy(&x176, &x88);
+    for (var j=0; j<88; j++) { msqr2(&x176); }
+    mmul(&x176, &x88);
+    copy(&x220, &x176);
+    for (var j=0; j<44; j++) { msqr2(&x220); }
+    mmul(&x220, &x44);
+    copy(&x223, &x220);
+    for (var j=0; j<3; j++) { msqr2(&x223); }
+    mmul(&x223, &x3);
+    copy(&t1, &x223);
+    for (var j=0; j<23; j++) { msqr2(&t1); }
+    mmul(&t1, &x22);
+    for (var j=0; j<5; j++) { msqr2(&t1); }
+    mmul(&t1, r);
+    for (var j=0; j<3; j++) { msqr2(&t1); }
+    mmul(&t1, &x2);
+    for (var j=0; j<2; j++) { msqr2(&t1); }
+    mmul(r, &t1);
 }
 
 fn loadCompPt(p: ptr<function, affinePoint>, index: u32) {
@@ -467,6 +534,16 @@ fn loadCompPt(p: ptr<function, affinePoint>, index: u32) {
     tmp[i] = input[index*16 + 8 + i];
   }
   load26x10(&tmp, &p.y);
+}
+
+fn toAffine(r: ptr<function, affinePoint>, a: ptr<function, normalPoint>) {
+    var z2: array<u32, 10>;
+    var z3: array<u32, 10>;
+    minv(&a.z);
+    msqr(&z2, &a.z);
+    mmul2(&z3, &a.z, &z2);
+    mmul2(&r.x, &a.x, &z2);
+    mmul2(&r.y, &a.y, &z3);
 }
 
 @group(0) @binding(0) var<storage, read> input: array<u32>;
@@ -516,8 +593,8 @@ fn main() {
     secp256k1_add(&ptTmp, &p, &G256);
     p = ptTmp;
   }
+  toAffine(&ptA, &p);
 
-  for (var i: u32 = 0; i < 10; i++) { output[i] = p.x[i]; }
-  for (var i: u32 = 0; i < 10; i++) { output[i+10] = p.y[i]; }
-  for (var i: u32 = 0; i < 10; i++) { output[i+20] = p.z[i]; }
+  for (var i: u32 = 0; i < 10; i++) { output[i] = ptA.x[i]; }
+  for (var i: u32 = 0; i < 10; i++) { output[i+10] = ptA.y[i]; }
 }
