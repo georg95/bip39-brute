@@ -481,19 +481,43 @@ fn main() {
 
   var p: normalPoint;
   var ptTmp: normalPoint;
+  var ptA: affinePoint;
   set0pt(&p);
   set0pt(&ptTmp);
 
-  var ptA: affinePoint;
-  loadCompPt(&ptA, 46);
-  var ptB: affinePoint;
-  loadCompPt(&ptB, 131);
-  mnegate2(&ptB.y, 0);
-  secp256k1_add(&ptTmp, &p, &ptA);
-  secp256k1_add(&p, &ptTmp, &ptB);
-  secp256k1_add(&ptTmp, &p, &G256);
+  var privKey = array<u32, 8>(
+    4294966319u,
+    4294967295u,
+    4294967295u,
+    4294967295u,
+    4294967295u,
+    4294967295u,
+    4294967295u,
+    4294967295u
+  );
+  let mask: u32 = 0xffu;
+  var carry: u32 = 0u;
+  for (var w = 0u; w < 32; w++) { // 4x8
+    let index: u32 = w / 4u;
+    let part = w%4u;
+    var wbits: i32 = i32(((privKey[index] >> (part * 8u)) & mask) + carry);
+    if (wbits > 128) { wbits -= 256; carry = 1u; }
+    else { carry = 0; }
+    let off = w * 128u;
+    if (wbits != 0) {
+      let offP: u32 = off + u32(abs(wbits)) - 1;
+      loadCompPt(&ptA, offP);
+      if (wbits < 0) { mnegate2(&ptA.y, 0); }
+      secp256k1_add(&ptTmp, &p, &ptA);
+      p = ptTmp;
+    }
+  }
+  if (carry > 0) {
+    secp256k1_add(&ptTmp, &p, &G256);
+    p = ptTmp;
+  }
 
-  for (var i: u32 = 0; i < 10; i++) { output[i] = ptTmp.x[i]; }
-  for (var i: u32 = 0; i < 10; i++) { output[i+10] = ptTmp.y[i]; }
-  for (var i: u32 = 0; i < 10; i++) { output[i+20] = ptTmp.z[i]; }
+  for (var i: u32 = 0; i < 10; i++) { output[i] = p.x[i]; }
+  for (var i: u32 = 0; i < 10; i++) { output[i+10] = p.y[i]; }
+  for (var i: u32 = 0; i < 10; i++) { output[i+20] = p.z[i]; }
 }
