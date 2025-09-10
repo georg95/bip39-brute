@@ -1,5 +1,3 @@
-import { precompute } from './worker.js';
-
 function bufUint32LESwap(buf) {
     for (let i = 0; i + 3 < buf.length; i += 4) {
         const a = buf[i]

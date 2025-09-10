@@ -28,7 +28,7 @@ bc1q0esjzsh4et4wxrfumglc97fpksvmwp8dwuwdxx
   - [ ] SHA-256
   - [x] SHA-512
   - [x] PBKDF2-HMAC-512
-  - [ ] secp256k1
+  - [x] secp256k1
   - [ ] ripemd160
   - [ ] Mnemonic checksum
   - [ ] Mnemonic to seed
