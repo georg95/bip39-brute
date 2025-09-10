@@ -318,6 +318,18 @@ fn mnegate(r: ptr<function, array<u32, 10>>, a: ptr<function, array<u32, 10>>, m
   r[8] = 0x3FFFFFF * 2 * (m + 1) - a[8];
   r[9] = 0x03FFFFF * 2 * (m + 1) - a[9];
 }
+fn mnegate2(r: ptr<function, array<u32, 10>>, m: u32) {
+  r[0] = 0x3FFFC2F * 2 * (m + 1) - r[0];
+  r[1] = 0x3FFFFBF * 2 * (m + 1) - r[1];
+  r[2] = 0x3FFFFFF * 2 * (m + 1) - r[2];
+  r[3] = 0x3FFFFFF * 2 * (m + 1) - r[3];
+  r[4] = 0x3FFFFFF * 2 * (m + 1) - r[4];
+  r[5] = 0x3FFFFFF * 2 * (m + 1) - r[5];
+  r[6] = 0x3FFFFFF * 2 * (m + 1) - r[6];
+  r[7] = 0x3FFFFFF * 2 * (m + 1) - r[7];
+  r[8] = 0x3FFFFFF * 2 * (m + 1) - r[8];
+  r[9] = 0x03FFFFF * 2 * (m + 1) - r[9];
+}
 
 fn mnormtozero(r: ptr<function, array<u32, 10>>) -> bool {
   var t0 = r[0];
@@ -371,16 +383,16 @@ fn copy(r: ptr<function, array<u32, 10>>, a: ptr<function, array<u32, 10>>) {
   r[9] = a[9];
 }
 fn set1(r: ptr<function, array<u32, 10>>) {
-  r[0] = 1;
-  r[1] = 0;
-  r[2] = 0;
-  r[3] = 0;
-  r[4] = 0;
-  r[5] = 0;
-  r[6] = 0;
-  r[7] = 0;
-  r[8] = 0;
-  r[9] = 0;
+  r[0] = 1; r[1] = 0; r[2] = 0; r[3] = 0; r[4] = 0; r[5] = 0; r[6] = 0; r[7] = 0; r[8] = 0; r[9] = 0;
+}
+fn set0pt(p: ptr<function, normalPoint>) {
+  set0(&p.x);
+  set0(&p.y);
+  set0(&p.z);
+  p.infinity = true;
+}
+fn set0(r: ptr<function, array<u32, 10>>) {
+  r[0] = 0; r[1] = 0; r[2] = 0; r[3] = 0; r[4] = 0; r[5] = 0; r[6] = 0; r[7] = 0; r[8] = 0; r[9] = 0;
 }
 
 fn secp256k1_add(r: ptr<function, normalPoint>, a: ptr<function, normalPoint>, b: ptr<function, affinePoint>) {
@@ -445,25 +457,43 @@ fn secp256k1_add(r: ptr<function, normalPoint>, a: ptr<function, normalPoint>, b
     r.infinity = mnormtozero(&r.z);
 }
 
+fn loadCompPt(p: ptr<function, affinePoint>, index: u32) {
+  var tmp: array<u32, 8>;
+  for (var i = 0u; i < 8; i++) {
+    tmp[i] = input[index*16 + i];
+  }
+  load26x10(&tmp, &p.x);
+  for (var i = 0u; i < 8; i++) {
+    tmp[i] = input[index*16 + 8 + i];
+  }
+  load26x10(&tmp, &p.y);
+}
+
 @group(0) @binding(0) var<storage, read> input: array<u32>;
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;
 @compute @workgroup_size(1)
 fn main() {
   var G256x: array<u32, 8> = array<u32, 8>(0xeb9a9787, 0x92f76cc4, 0x59599680, 0x89bdde81, 0xbbd3788d, 0x74669716, 0xef5ba060, 0xdd3625fa);         
   var G256y: array<u32, 8> = array<u32, 8>(0xc644a573, 0x37f68d00, 0x28833959, 0x94146198, 0x045731ca, 0x61da2501, 0x520e30d4, 0x7a188fa3);
-  var G256x10: array<u32, 10>;
-  var G256y10: array<u32, 10>;
-  var G256z10: array<u32, 10>;
-  load26x10(&G256x, &G256x10);
-  load26x10(&G256y, &G256y10);
-  set1(&G256z10);
+  var G256x10: array<u32, 10>; var G256y10: array<u32, 10>;
+  load26x10(&G256x, &G256x10); load26x10(&G256y, &G256y10);
+  var G256 = affinePoint(G256x10, G256y10);
 
-  var pt1 = normalPoint(G256x10, G256y10, G256z10, false);
-  var pt2 = affinePoint(G256x10, G256y10);
-  var pt3: normalPoint;
-  secp256k1_add(&pt3, &pt1, &pt2);
+  var p: normalPoint;
+  var ptTmp: normalPoint;
+  set0pt(&p);
+  set0pt(&ptTmp);
 
-  for (var i: u32 = 0; i < 10; i++) { output[i] = pt3.x[i]; }
-  for (var i: u32 = 0; i < 10; i++) { output[i+10] = pt3.y[i]; }
-  for (var i: u32 = 0; i < 10; i++) { output[i+20] = pt3.z[i]; }
+  var ptA: affinePoint;
+  loadCompPt(&ptA, 46);
+  var ptB: affinePoint;
+  loadCompPt(&ptB, 131);
+  mnegate2(&ptB.y, 0);
+  secp256k1_add(&ptTmp, &p, &ptA);
+  secp256k1_add(&p, &ptTmp, &ptB);
+  secp256k1_add(&ptTmp, &p, &G256);
+
+  for (var i: u32 = 0; i < 10; i++) { output[i] = ptTmp.x[i]; }
+  for (var i: u32 = 0; i < 10; i++) { output[i+10] = ptTmp.y[i]; }
+  for (var i: u32 = 0; i < 10; i++) { output[i+20] = ptTmp.z[i]; }
 }

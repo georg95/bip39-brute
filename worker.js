@@ -466,7 +466,7 @@ export const precompute = (W, onBatch) => {
     const points = [];
     let p = G;
     let b = p;
-    for (let w = 0; w < Math.ceil(256 / W) + 1; w++) {
+    for (let w = 0; w < Math.ceil(256 / W); w++) {
         b = p
         var pointsBatch = []
         pointsBatch.push(b);
@@ -485,6 +485,8 @@ export const precompute = (W, onBatch) => {
 };
 let Gpows; // precomputes for base point G
 
+const G256 = new Point(100056811408208733275829432225571761443897154861420255832015183193056831248263n,
+  55225563209553524050574769423916742683973132338171759239001668957831436739955n, 1n)
 const wNAF = (n) => {
     if (!Gpows) { Gpows = precompute(W) }
     let p = I;
@@ -492,7 +494,7 @@ const wNAF = (n) => {
     const shiftBy = BigInt(W); // 8 for W=8
     const ONE = 1n;
     const WIN_SIZE = 2 ** (W - 1);
-    const pwindows = Math.ceil(256 / W) + 1;
+    const pwindows = Math.ceil(256 / W);
     for (let w = 0; w < pwindows; w++) {
         let wbits = Number(n & mask); // extract W bits.
         n >>= shiftBy; // shift number by W bits.
@@ -506,5 +508,6 @@ const wNAF = (n) => {
             p = p.add(wbits < 0 ? Gpows[offP].negate() : Gpows[offP]); // bits are 1: add to result point
         }
     }
+    if (n === 1n) { p = p.add(G256) }
     return p; // return both real and fake points for JIT
 };

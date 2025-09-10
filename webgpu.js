@@ -40,7 +40,7 @@ function BigToU32(n) {
 }
 async function testSecp256k1() {
     const PRECOMPUTE_WINDOW = 8
-    const PRECOMPUTE_SIZE = 2 ** (PRECOMPUTE_WINDOW - 1) * (Math.ceil(256 / PRECOMPUTE_WINDOW) + 1)
+    const PRECOMPUTE_SIZE = 2 ** (PRECOMPUTE_WINDOW - 1) * (Math.ceil(256 / PRECOMPUTE_WINDOW)) * 64
     const inp = new Uint32Array(PRECOMPUTE_SIZE / 4).fill(0)
     precompute(PRECOMPUTE_WINDOW, (batch, i) => {
         batch.forEach(({X, Y}, j) => {
@@ -55,23 +55,23 @@ async function testSecp256k1() {
     const out = await infer('wgsl/secp256k1.wgsl', inp)
     const exp = [
         // x
-    15443313, 82652631,
-     30743751, 26825867,
-     60016663, 75851929,
-    104333337, 78220943,
-     52171673,  5585238,
+     83643075, 76069071,
+     55469393, 21767991,
+     10937513, 34532574,
+     44697786, 43417801,
+    111230169,  1911620,
         // y
-    501805033, 488421663,
-    511246757, 457644204,
-    519752386, 448796543,
-    483102931, 516464078,
-    463278218,  30372994,
+    470864147, 421433767,
+    456796015, 435566382,
+    474743752, 492879811,
+    471075114, 479116549,
+    458988899,  25782099,
         // z
-    8997606, 54952035,
-    53159678, 12665881,
-    19409091, 36411621,
-    54829088, 25600782,
-    54961180,  4000839,
+    22585090,  2251927,
+     2778108, 25262302,
+    37498620,  5439290,
+    15831125, 21874988,
+    33853260,  2110620,
   ].join(',')
     const res = Array.from(out.slice(0, 30)).join(',')
     console.log(exp)
