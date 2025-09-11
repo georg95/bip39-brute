@@ -24,6 +24,7 @@ bc1q0esjzsh4et4wxrfumglc97fpksvmwp8dwuwdxx
 - [x] Ethereum wallets
 - [x] BSC wallets
 - [x] Tron wallets
+- [ ] Password bruteforce mode
 - [ ] WebGPU backend
   - [ ] SHA-256
   - [x] SHA-512
