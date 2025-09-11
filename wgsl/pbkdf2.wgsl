@@ -131,6 +131,13 @@ fn sha512(inp: ptr<function, array<u32, 32>>, out: ptr<function, array<u32, 16>>
 @group(0) @binding(0) var<storage, read> input: array<u32>;
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;
 
+const masks = array<u32, 4>(0x00ffffff, 0xff00ffff, 0xffff00ff, 0xffffff00);
+fn setByte(x: u32, idx: u32, byte: u32) -> u32 {
+  return (x & masks[idx]) + (byte << (24 - idx * 8));
+}
+
+const MAX_PASSWORD_LEN: u32 = 128 - 9; // 0x00000001 (4 bytes) 0x80 (1 byte) %%seed bits%% (4 bytes)
+
 @compute @workgroup_size(1)
 fn main() {
   var IV = array<u32,16>(
@@ -149,9 +156,23 @@ fn main() {
   for (var i = 0; i < 32; i += 1) { tmp_buf[i] = 0; }
   tmp_buf[0] = 0x6d6e656d; // mnem
   tmp_buf[1] = 0x6f6e6963; // onic
-  tmp_buf[2] = 1;
-  tmp_buf[3] = 0x80000000;
-  tmp_buf[31] = 140 * 8;
+  var passOffset: u32 = 200;
+
+  var passLen: u32 = 0;
+  for (; passLen < MAX_PASSWORD_LEN; passLen++) {
+    var offset = passOffset + passLen;
+    var i = passLen / 4;
+    var b = (input[offset / 4] >> (24 - (offset % 4) * 8)) & 0xff;
+    if (b == 0) { break; }
+    tmp_buf[2 + i] = setByte(tmp_buf[2 + i], passLen%4, b);
+  }
+  var byte = 8u + passLen;
+  tmp_buf[byte/4] = setByte(tmp_buf[byte/4], byte%4, 0x00); byte++;
+  tmp_buf[byte/4] = setByte(tmp_buf[byte/4], byte%4, 0x00); byte++;
+  tmp_buf[byte/4] = setByte(tmp_buf[byte/4], byte%4, 0x00); byte++;
+  tmp_buf[byte/4] = setByte(tmp_buf[byte/4], byte%4, 0x01); byte++;
+  tmp_buf[byte/4] = setByte(tmp_buf[byte/4], byte%4, 0x80); byte++;
+  tmp_buf[31] = (passLen + 140) * 8;
   var new_block: array<u32, 16>;
   sha512(&tmp_buf, &new_block, &seed1);
 
