@@ -59,8 +59,8 @@ async function testDerive1() {
 
     const infer = await webGPUinit()
     const out = await infer('wgsl/derive_coin.wgsl', inp)
-    const privKeyExp = 'a7661fa497f67a7d5a17f299e76635e16d69aca8b89ac8022cabad47690f47f6'
-    const chainCodeExp = 'af0894dc5f2d5bed0dc85b2fd2053a98575765c144e4e64126ee1009b38860b2'
+    const privKeyExp = 'fe64af825b5b78554c33a28b23085fc082f691b3c712cc1d4e66e133297da87a'
+    const chainCodeExp = '3da4bc190a2680111d31fadfdc905f2a7f6ce77c6f109919116f253d43445219'
     const privKey = Array.from(out.slice(0, 8)).map(x => x.toString(16).padStart(8, '0')).join('')
     const chainCode = Array.from(out.slice(8, 16)).map(x => x.toString(16).padStart(8, '0')).join('')
     console.log('Priv key(exp):', '0x'+privKeyExp+'n');
