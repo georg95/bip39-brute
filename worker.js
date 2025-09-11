@@ -165,7 +165,7 @@ async function mnemonicToSeed(mnemonic) {
   return new Uint8Array(derivedBits);
 }
 
-const CURVE_N = BigInt("0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141");
+const CURVE_N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n
 const BITCOIN_SEED = new TextEncoder().encode('Bitcoin seed')
 let mcryptoKey = null;
 crypto.subtle.importKey("raw", BITCOIN_SEED, { name: "HMAC", hash: "SHA-512" }, false, ["sign"]).then(key => mcryptoKey = key);

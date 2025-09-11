@@ -172,6 +172,40 @@ fn hmacSha512(key: ptr<function, array<u32, 16>>, data: ptr<function, array<u32,
 @group(0) @binding(0) var<storage, read> input: array<u32>;
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;
 
+fn deriveChild(keys: ptr<function, array<u32, 16>>, network: u32, coin: u32) {
+  var key: array<u32, 16>;
+  var data: array<u32, 32>;
+  var privkey: array<u32, 8>;
+
+  for (var i = 0; i < 8; i++) { privkey[i] = keys[i]; }
+  for (var i = 8; i < 16; i++) { key[i] = 0; } // chainCode
+  for (var i = 0; i < 8; i++) { key[i] = keys[i+8]; }
+
+  for (var i = 0; i < 32; i++) { data[i] = 0; }
+  setByteArr(&data, 0, 0);
+  for (var i = 0u; i < 32; i++) {
+    setByteArr(&data, i+1, getByteArr(keys, i));
+  }
+  setByteArr(&data, 33, network);
+  setByteArr(&data, 34, 0);
+  setByteArr(&data, 35, 0);
+  setByteArr(&data, 36, coin);
+
+  hmacSha512(&key, &data, 37, keys);
+  // add out[0-8] + privkey[0-8]
+  var carry: u32 = 0;
+  for (var i = 7; i >= 0; i--) {
+    var a = privkey[i];
+    var b = keys[i];
+    var c = a + b;
+    var carry1 = select(0u, 1u, c < a);
+    c = c + carry;
+    var carry2 = select(0u, 1u, c < carry);
+    carry = carry1 + carry2;
+    keys[i] = c;
+  }
+}
+
 @compute @workgroup_size(1)
 fn main() {
   var IV = array<u32,16>(
@@ -183,12 +217,17 @@ fn main() {
   var key: array<u32, 16>;
   var data: array<u32, 32>;
   var out: array<u32, 16>;
+  var privkey: array<u32, 16>;
+  // ROUND 0
+
   for (var i = 0; i < 16; i++) { key[i] = 0; }
   key[0] = 0x42697463;
   key[1] = 0x6f696e20;
   key[2] = 0x73656564;
   for (var i = 0; i < 32; i++) { data[i] = input[i+16]; }
   hmacSha512(&key, &data, 64, &out);
+
+  // ROUND 1
   for (var i = 8; i < 16; i++) { key[i] = 0; } // chainCode
   for (var i = 0; i < 8; i++) { key[i] = out[i+8]; }
 
@@ -202,9 +241,58 @@ fn main() {
   setByteArr(&data, 35, 0);
   setByteArr(&data, 36, 44);
 
+  for (var i = 0; i < 8; i++) { privkey[i] = out[i]; }
   hmacSha512(&key, &data, 37, &out);
-
-  for (var i = 0; i < 16; i++) {
-    output[i] = out[i];
+  // add out[0-8] + privkey[0-8]
+  var carry: u32 = 0;
+  for (var i = 7; i >= 0; i--) {
+    var a = privkey[i];
+    var b = out[i];
+    var c = a + b;
+    var carry1 = select(0u, 1u, c < a);
+    c = c + carry;
+    var carry2 = select(0u, 1u, c < carry);
+    carry = carry1 + carry2;
+    privkey[i] = c;
   }
+  // if (carry == 1 || privkey >= 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n)
+  // privkey += 0x14551231950b75fc4402da1732fc9bebf
+
+  // for (var i = 0; i < 8; i++) { output[i] = privkey[i]; } // privKey cd46049fb82a4fccbd967c5234e61152f4df87d01d1ef833420814c67ee4b7ea
+  // for (var i = 8; i < 16; i++) { output[i] = out[i]; } // chainCode  45d3b0e8206db10a08d555317c7e245c5bbd12254ce968f3c79a959d4e6af98a
+
+  // ROUND 2
+  for (var i = 8; i < 16; i++) { key[i] = 0; } // chainCode
+  for (var i = 0; i < 8; i++) { key[i] = out[i+8]; }
+
+  for (var i = 0; i < 32; i++) { data[i] = 0; }
+  setByteArr(&data, 0, 0);
+  for (var i = 0u; i < 32; i++) {
+    setByteArr(&data, i+1, getByteArr(&privkey, i));
+  }
+  setByteArr(&data, 33, 128);
+  setByteArr(&data, 34, 0);
+  setByteArr(&data, 35, 0);
+  setByteArr(&data, 36, 0);
+
+  hmacSha512(&key, &data, 37, &out);
+  // cd46049fb82a4fccbd967c5234e61152f4df87d01d1ef833420814c67ee4b7ea +
+  // da201b04dfcc2ab09c817647b280248d333901bf4ac4700aaa75f70dba60d14d
+  // add out[0-8] + privkey[0-8]
+  carry = 0;
+  for (var i = 7; i >= 0; i--) {
+    var a = privkey[i];
+    var b = out[i];
+    var c = a + b;
+    var carry1 = select(0u, 1u, c < a);
+    c = c + carry;
+    var carry2 = select(0u, 1u, c < carry);
+    carry = carry1 + carry2;
+    privkey[i] = c;
+  }
+  // if (carry == 1 || privkey >= 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n)
+  // privkey += 0x14551231950b75fc4402da1732fc9bebf
+
+  for (var i = 0; i < 8; i++) { output[i] = privkey[i]; } // privKey
+  for (var i = 8; i < 16; i++) { output[i] = out[i]; } // chainCode
 }

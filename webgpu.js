@@ -47,7 +47,7 @@ async function testPbkdf2() {
 }
 // testPbkdf2()
 
-async function testHmac512() {
+async function testDerive1() {
     const inp = new Uint32Array(1024).fill(0)
     var strbuf = new Uint8Array(inp.buffer, inp.byteOffset, inp.byteLength)
     const KEY = new TextEncoder().encode('Bitcoin seed')
@@ -59,17 +59,26 @@ async function testHmac512() {
 
     const infer = await webGPUinit()
     const out = await infer('wgsl/derive_coin.wgsl', inp)
-    const res = '45d3b0e8206db10a08d555317c7e245c5bbd12254ce968f3c79a959d4e6af98a'
-    const resHash = Array.from(out.slice(8, 16)).map(x => x.toString(16).padStart(8, '0')).join('')
-    console.log(resHash)
-    console.log(res)
-    if (resHash === res) {
-        console.log('✅ hmac-sha512 wgsl PASSED')
+    const privKeyExp = 'a7661fa497f67a7d5a17f299e76635e16d69aca8b89ac8022cabad47690f47f6'
+    const chainCodeExp = 'af0894dc5f2d5bed0dc85b2fd2053a98575765c144e4e64126ee1009b38860b2'
+    const privKey = Array.from(out.slice(0, 8)).map(x => x.toString(16).padStart(8, '0')).join('')
+    const chainCode = Array.from(out.slice(8, 16)).map(x => x.toString(16).padStart(8, '0')).join('')
+    console.log('Priv key(exp):', '0x'+privKeyExp+'n');
+    console.log('Priv key(got):', '0x'+privKey+'n');
+    console.log('Chain (exp):', '0x'+chainCodeExp+'n');
+    console.log('Chain (got):', '0x'+chainCode+'n');
+    if (privKey === privKeyExp) {
+        console.log('✅ testDerive1 privKey PASSED')
     } else {
-        console.log('❌ hmac-sha512 wgsl FAILED')
+        console.log('❌ testDerive1 privKey FAILED')
+    }
+    if (chainCode === chainCodeExp) {
+        console.log('✅ testDerive1 chainCode PASSED')
+    } else {
+        console.log('❌ testDerive1 chainCode FAILED')
     }
 }
-testHmac512()
+testDerive1()
 
 function BigToU32(n) {
     const hex = n.toString(16).padStart(64, '0')
