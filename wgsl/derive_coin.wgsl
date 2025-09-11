@@ -135,8 +135,13 @@ fn setByteArr(arr: ptr<function, array<u32, 32>>, idx: u32, byte: u32) {
   let sh = idx%4;
   arr[i] = (arr[i] & masks[sh]) + (byte << (24 - sh * 8));
 }
+fn getByteArr(arr: ptr<function, array<u32, 16>>, idx: u32) -> u32 {
+  let i = idx/4;
+  let sh = idx%4;
+  return (arr[i] >> (24 - sh * 8)) & 0xff;
+}
 
-fn hmacSha512(key: ptr<function, array<u32, 16>>, data: ptr<function, array<u32, 16>>, dataLen: u32, out: ptr<function, array<u32, 16>>) {
+fn hmacSha512(key: ptr<function, array<u32, 16>>, data: ptr<function, array<u32, 32>>, dataLen: u32, out: ptr<function, array<u32, 16>>) {
     var IV = array<u32,16>(
       0x6a09e667, 0xf3bcc908, 0xbb67ae85, 0x84caa73b,
       0x3c6ef372, 0xfe94f82b, 0xa54ff53a, 0x5f1d36f1,
@@ -176,11 +181,28 @@ fn main() {
       0x1f83d9ab, 0xfb41bd6b, 0x5be0cd19, 0x137e2179,
   );
   var key: array<u32, 16>;
-  var data: array<u32, 16>;
+  var data: array<u32, 32>;
   var out: array<u32, 16>;
-  for (var i = 0; i < 16; i++) { key[i] = input[i]; }
-  for (var i = 0; i < 16; i++) { data[i] = input[i+16]; }
-  hmacSha512(&key, &data, 9, &out);
+  for (var i = 0; i < 16; i++) { key[i] = 0; }
+  key[0] = 0x42697463;
+  key[1] = 0x6f696e20;
+  key[2] = 0x73656564;
+  for (var i = 0; i < 32; i++) { data[i] = input[i+16]; }
+  hmacSha512(&key, &data, 64, &out);
+  for (var i = 8; i < 16; i++) { key[i] = 0; } // chainCode
+  for (var i = 0; i < 8; i++) { key[i] = out[i+8]; }
+
+  for (var i = 0; i < 32; i++) { data[i] = 0; }
+  setByteArr(&data, 0, 0);
+  for (var i = 0u; i < 32; i++) {
+    setByteArr(&data, i+1, getByteArr(&out, i));
+  }
+  setByteArr(&data, 33, 128);
+  setByteArr(&data, 34, 0);
+  setByteArr(&data, 35, 0);
+  setByteArr(&data, 36, 44);
+
+  hmacSha512(&key, &data, 37, &out);
 
   for (var i = 0; i < 16; i++) {
     output[i] = out[i];

@@ -20,8 +20,9 @@ async function mnemonicToSeed(mnemonic, password="") {
         "raw", mnemonicBuffer, { name: "PBKDF2" }, false, ["deriveBits"]);
     const derivedBits = await crypto.subtle.deriveBits({
         name: "PBKDF2", salt: saltBuffer, iterations: 2048, hash: "SHA-512" }, keyMaterial, 512);
-    return Array.from(new Uint8Array(derivedBits)).map(b => b.toString(16).padStart(2, '0')).join('');
+    return new Uint8Array(derivedBits);
 }
+function toHex(u8) { return Array.from(u8).map(b => b.toString(16).padStart(2, '0')).join(''); }
 
 async function testPbkdf2() {
     const inp = new Uint32Array(1024).fill(0)
@@ -34,7 +35,7 @@ async function testPbkdf2() {
 
     const infer = await webGPUinit()
     const out = await infer('wgsl/pbkdf2.wgsl', inp)
-    const pbkdf2 = await mnemonicToSeed(MNEMONIC, PASSWORD)
+    const pbkdf2 = toHex(await mnemonicToSeed(MNEMONIC, PASSWORD))
     const resHash = Array.from(out.slice(0, 16)).map(x => x.toString(16).padStart(8, '0')).join('')
     console.log(resHash)
     console.log(pbkdf2)
@@ -50,18 +51,16 @@ async function testHmac512() {
     const inp = new Uint32Array(1024).fill(0)
     var strbuf = new Uint8Array(inp.buffer, inp.byteOffset, inp.byteLength)
     const KEY = new TextEncoder().encode('Bitcoin seed')
-    const DATA = new TextEncoder().encode('test data')
+    const seed = await mnemonicToSeed('abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about', '')
+    console.log('seed:', toHex(seed))
     strbuf.set(KEY)
-    strbuf.set(DATA, 64)
+    strbuf.set(seed, 64)
     bufUint32LESwap(strbuf)
-
-    let mcryptoKey = await crypto.subtle.importKey("raw", KEY, { name: "HMAC", hash: "SHA-512" }, false, ["sign"])
-    const msignature = new Uint8Array(await crypto.subtle.sign("HMAC", mcryptoKey, DATA))
 
     const infer = await webGPUinit()
     const out = await infer('wgsl/derive_coin.wgsl', inp)
-    const res = Array.from(msignature).map(b => b.toString(16).padStart(2, '0')).join('')
-    const resHash = Array.from(out.slice(0, 16)).map(x => x.toString(16).padStart(8, '0')).join('')
+    const res = '45d3b0e8206db10a08d555317c7e245c5bbd12254ce968f3c79a959d4e6af98a'
+    const resHash = Array.from(out.slice(8, 16)).map(x => x.toString(16).padStart(8, '0')).join('')
     console.log(resHash)
     console.log(res)
     if (resHash === res) {
