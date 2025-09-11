@@ -32,7 +32,6 @@ async function testPbkdf2() {
     strbuf.set(new TextEncoder().encode(PASSWORD), 200)
     bufUint32LESwap(strbuf)
 
-    console.log()
     const infer = await webGPUinit()
     const out = await infer('wgsl/pbkdf2.wgsl', inp)
     const pbkdf2 = await mnemonicToSeed(MNEMONIC, PASSWORD)
@@ -45,7 +44,33 @@ async function testPbkdf2() {
         console.log('❌ pbkdf2 wgsl FAILED')
     }
 }
-testPbkdf2()
+// testPbkdf2()
+
+async function testHmac512() {
+    const inp = new Uint32Array(1024).fill(0)
+    var strbuf = new Uint8Array(inp.buffer, inp.byteOffset, inp.byteLength)
+    const KEY = new TextEncoder().encode('Bitcoin seed')
+    const DATA = new TextEncoder().encode('test data')
+    strbuf.set(KEY)
+    strbuf.set(DATA, 64)
+    bufUint32LESwap(strbuf)
+
+    let mcryptoKey = await crypto.subtle.importKey("raw", KEY, { name: "HMAC", hash: "SHA-512" }, false, ["sign"])
+    const msignature = new Uint8Array(await crypto.subtle.sign("HMAC", mcryptoKey, DATA))
+
+    const infer = await webGPUinit()
+    const out = await infer('wgsl/derive_coin.wgsl', inp)
+    const res = Array.from(msignature).map(b => b.toString(16).padStart(2, '0')).join('')
+    const resHash = Array.from(out.slice(0, 16)).map(x => x.toString(16).padStart(8, '0')).join('')
+    console.log(resHash)
+    console.log(res)
+    if (resHash === res) {
+        console.log('✅ hmac-sha512 wgsl PASSED')
+    } else {
+        console.log('❌ hmac-sha512 wgsl FAILED')
+    }
+}
+testHmac512()
 
 function BigToU32(n) {
     const hex = n.toString(16).padStart(64, '0')

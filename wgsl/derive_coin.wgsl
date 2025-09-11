@@ -128,8 +128,6 @@ fn sha512(inp: ptr<function, array<u32, 32>>, out: ptr<function, array<u32, 16>>
   out[15] = hlo;
 }
 
-@group(0) @binding(0) var<storage, read> input: array<u32>;
-@group(0) @binding(1) var<storage, read_write> output: array<u32>;
 
 const masks = array<u32, 4>(0x00ffffff, 0xff00ffff, 0xffff00ff, 0xffffff00);
 fn setByteArr(arr: ptr<function, array<u32, 32>>, idx: u32, byte: u32) {
@@ -138,7 +136,36 @@ fn setByteArr(arr: ptr<function, array<u32, 32>>, idx: u32, byte: u32) {
   arr[i] = (arr[i] & masks[sh]) + (byte << (24 - sh * 8));
 }
 
-const MAX_PASSWORD_LEN: u32 = 128 - 9; // 0x00000001 (4 bytes) 0x80 (1 byte) %%seed bits%% (4 bytes)
+fn hmacSha512(key: ptr<function, array<u32, 16>>, data: ptr<function, array<u32, 16>>, dataLen: u32, out: ptr<function, array<u32, 16>>) {
+    var IV = array<u32,16>(
+      0x6a09e667, 0xf3bcc908, 0xbb67ae85, 0x84caa73b,
+      0x3c6ef372, 0xfe94f82b, 0xa54ff53a, 0x5f1d36f1,
+      0x510e527f, 0xade682d1, 0x9b05688c, 0x2b3e6c1f,
+      0x1f83d9ab, 0xfb41bd6b, 0x5be0cd19, 0x137e2179,
+    );
+    var buf: array<u32, 32>;
+    var seed: array<u32, 16>;
+    var rr: array<u32, 16>;
+
+    for (var i = 0; i < 32; i++) { buf[i] = key[i] ^ 0x36363636; }
+    sha512(&buf, &seed, &IV);
+    for (var i = 0; i < 32; i++) { buf[i] = data[i]; }
+    setByteArr(&buf, dataLen, 0x80);
+    setByteArr(&buf, 127, ((128 + dataLen) & 0x1f) << 3);
+    setByteArr(&buf, 126, ((128 + dataLen) >> 5) & 0xff);
+    sha512(&buf, &rr, &seed);
+
+    for (var i = 0; i < 32; i++) { buf[i] = key[i] ^ 0x5c5c5c5c; }
+    sha512(&buf, &seed, &IV);
+    for (var i = 0; i < 16; i++) { buf[i] = rr[i]; }
+    for (var i = 16; i < 32; i++) { buf[i] = 0; }
+    setByteArr(&buf, 64, 0x80);
+    setByteArr(&buf, 126, 6);
+    sha512(&buf, out, &seed);
+}
+
+@group(0) @binding(0) var<storage, read> input: array<u32>;
+@group(0) @binding(1) var<storage, read_write> output: array<u32>;
 
 @compute @workgroup_size(1)
 fn main() {
@@ -148,51 +175,14 @@ fn main() {
       0x510e527f, 0xade682d1, 0x9b05688c, 0x2b3e6c1f,
       0x1f83d9ab, 0xfb41bd6b, 0x5be0cd19, 0x137e2179,
   );
-  var tmp_buf: array<u32, 32>;
-  var seed1: array<u32, 16>;
-  var seed2: array<u32, 16>;
-  for (var i: u32 = 0u; i < 32u; i += 1u) { tmp_buf[i] = input[i] ^ 0x36363636; }
-  sha512(&tmp_buf, &seed1, &IV);
-  for (var i: u32 = 0u; i < 32u; i += 1u) { tmp_buf[i] = input[i] ^ 0x5c5c5c5c; }
-  sha512(&tmp_buf, &seed2, &IV);
-  for (var i = 0; i < 32; i += 1) { tmp_buf[i] = 0; }
-  tmp_buf[0] = 0x6d6e656d; // mnem
-  tmp_buf[1] = 0x6f6e6963; // onic
-  var passOffset: u32 = 200;
+  var key: array<u32, 16>;
+  var data: array<u32, 16>;
+  var out: array<u32, 16>;
+  for (var i = 0; i < 16; i++) { key[i] = input[i]; }
+  for (var i = 0; i < 16; i++) { data[i] = input[i+16]; }
+  hmacSha512(&key, &data, 9, &out);
 
-  var passLen: u32 = 0;
-  for (; passLen < MAX_PASSWORD_LEN; passLen++) {
-    var offset = passOffset + passLen;
-    var b = (input[offset / 4] >> (24 - (offset % 4) * 8)) & 0xff;
-    if (b == 0) { break; }
-    setByteArr(&tmp_buf, 8u + passLen, b);
-  }
-  setByteArr(&tmp_buf, passLen + 8, 0x00);
-  setByteArr(&tmp_buf, passLen + 9, 0x00);
-  setByteArr(&tmp_buf, passLen + 10, 0x00);
-  setByteArr(&tmp_buf, passLen + 11, 0x01);
-  setByteArr(&tmp_buf, passLen + 12, 0x80);
-  tmp_buf[31] = (passLen + 140) * 8;
-  var new_block: array<u32, 16>;
-  sha512(&tmp_buf, &new_block, &seed1);
-
-  for (var i = 0; i < 16; i += 1) { tmp_buf[i] = new_block[i]; }
-  for (var i = 16; i < 32; i += 1) { tmp_buf[i] = 0; }
-  tmp_buf[16] = 0x80000000;
-  tmp_buf[31] = 192 * 8;
-  var dk: array<u32, 16>;
-  sha512(&tmp_buf, &dk, &seed2);
-  for (var i = 0; i < 32; i += 1) { new_block[i] = dk[i]; }
-
-  for (var i = 1; i < 2048; i += 1) {
-      for (var i = 0; i < 16; i += 1) { tmp_buf[i] = new_block[i]; }
-      sha512(&tmp_buf, &new_block, &seed1);
-      for (var i = 0; i < 16; i += 1) { tmp_buf[i] = new_block[i]; }
-      sha512(&tmp_buf, &new_block, &seed2);
-      for (var i = 0; i < 16; i += 1) { dk[i] ^= new_block[i]; }
-  }
-
-  for (var i = 0; i < 16; i += 1) {
-    output[i] = dk[i];
+  for (var i = 0; i < 16; i++) {
+    output[i] = out[i];
   }
 }
