@@ -1,3 +1,16 @@
+/*
+  1. pbkdf2
+  2. derive1
+  3. secp256k1
+  4. derive2
+  5. secp256k1
+
+  TODO: 6. derive3
+  TODO: 7. secp256k1.2
+  8. sha256
+  TODO: 9. ripemd160
+*/ 
+
 function bufUint32LESwap(buf) {
     for (let i = 0; i + 3 < buf.length; i += 4) {
         const a = buf[i]
@@ -46,6 +59,45 @@ async function testPbkdf2() {
     }
 }
 // testPbkdf2()
+
+function prepareSha256Block(input) {
+  assert(input.length <= 61, `sha256 input ${toHex(input)} is loner than 61 bytes`)
+  const blockBytes = new Uint8Array(64);
+  blockBytes.set(input, 0);
+  blockBytes[input.length] = 0x80;
+  blockBytes[62] = (input.length * 8) >> 8;
+  blockBytes[63] = (input.length * 8) & 0xff;
+  const words = new Uint32Array(16);
+  for (let i = 0; i < 16; i++) {
+    const j = i * 4;
+    words[i] =
+      (blockBytes[j] << 24) |
+      (blockBytes[j + 1] << 16) |
+      (blockBytes[j + 2] << 8) |
+      (blockBytes[j + 3]);
+    words[i] >>>= 0;
+  }
+  return words;
+}
+
+async function testSha256() {
+    const inp = new Uint32Array(1024).fill(0)
+    const PASSWORD = new TextEncoder().encode('')
+    inp.set(prepareSha256Block(PASSWORD))
+
+    const infer = await webGPUinit({})
+    const out = await infer({ shader: 'wgsl/sha256.wgsl', func: 'sha256', inp })
+    const sha256 = toHex(new Uint8Array(await crypto.subtle.digest('SHA-256', PASSWORD)))
+    const resSha256 = Array.from(out.slice(0, 8)).map(x => x.toString(16).padStart(8, '0')).join('')
+    console.log(resSha256)
+    console.log(sha256)
+    if (resSha256 === sha256) {
+        console.log('✅ sha256 wgsl PASSED')
+    } else {
+        console.log('❌ sha256 wgsl FAILED')
+    }
+}
+testSha256()
 
 async function testDerive1() {
     const inp = new Uint32Array(1024).fill(0)
@@ -117,7 +169,7 @@ async function testDerive2() {
         console.log('❌ testDerive2 chainCode FAILED')
     }
 }
-testDerive2()
+// testDerive2()
 
 function fromHexString (hexString) { return Uint8Array.from(hexString.match(/.{1,2}/g).map((byte) => parseInt(byte, 16))) }
 function BigToU32_reverse(n) {
