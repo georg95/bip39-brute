@@ -169,6 +169,57 @@ fn hmacSha512(key: ptr<function, array<u32, 16>>, data: ptr<function, array<u32,
     sha512(&buf, out, &seed);
 }
 
+
+fn deriveChild2(keys: ptr<function, array<u32, 16>>, keysPub: ptr<function, array<u32, 16>>, network: u32, coin: u32, prefix: u32) {
+  var key: array<u32, 16>;
+  var data: array<u32, 32>;
+  var privkey: array<u32, 8>;
+
+  for (var i = 0; i < 8; i++) { privkey[i] = keys[i]; }
+  for (var i = 8; i < 16; i++) { key[i] = 0; } // chainCode
+  for (var i = 0; i < 8; i++) { key[i] = keys[i+8]; }
+
+  for (var i = 0; i < 32; i++) { data[i] = 0; }
+  setByteArr(&data, 0, prefix);
+  for (var i = 0u; i < 32; i++) {
+    setByteArr(&data, i+1, getByteArr(keysPub, i));  // <--- public key !!!!!!!!
+  }
+  setByteArr(&data, 33, network);
+  setByteArr(&data, 34, 0);
+  setByteArr(&data, 35, 0);
+  setByteArr(&data, 36, coin);
+
+  hmacSha512(&key, &data, 37, keys);
+  // PrivKey = (PrivKey + hmac-sha512[0-32]) % N
+  var carry: u32 = 0;
+  for (var i = 7; i >= 0; i--) {
+    var a = privkey[i];  // <--- should be private key
+    var b = keys[i];
+    var c = a + b;
+    var carry1 = select(0u, 1u, c < a);
+    c = c + carry;
+    var carry2 = select(0u, 1u, c < carry);
+    carry = carry1 + carry2;
+    keys[i] = c;
+  }
+  var NInv = array<u32, 8>(0, 0, 0, 0x1, 0x45512319, 0x50b75fc4, 0x402da173, 0x2fc9bebe);
+  // >= 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141
+  let moreOrEqThanN = keys[0] >= 0xffffffff && keys[1] >= 0xffffffff && keys[2] >= 0xffffffff &&
+    keys[3] >= 0xfffffffe && keys[4] >= 0xbaaedce6 && keys[5] >= 0xaf48a03b && keys[6] >= 0xbfd25e8c && keys[7] >= 0xd0364141;
+  if (carry == 1 || moreOrEqThanN) {
+    for (var i = 7; i >= 0; i--) {
+      var a = NInv[i];
+      var b = keys[i];
+      var c = a + b;
+      var carry1 = select(0u, 1u, c < a);
+      c = c + carry;
+      var carry2 = select(0u, 1u, c < carry);
+      carry = carry1 + carry2;
+      keys[i] = c;
+    }
+  }
+}
+
 fn deriveChild(keys: ptr<function, array<u32, 16>>, network: u32, coin: u32) {
   var key: array<u32, 16>;
   var data: array<u32, 32>;
@@ -231,12 +282,23 @@ fn deriveSeed(keys: ptr<function, array<u32, 16>>) {
 @group(0) @binding(0) var<storage, read> input: array<u32>;
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;
 @compute @workgroup_size(1)
-fn main() {
+fn derive1() {
   var keys: array<u32, 16>;
   deriveSeed(&keys);
   deriveChild(&keys, 128, 44);
   deriveChild(&keys, 128, 0);
   deriveChild(&keys, 128, 0);
+
+  for (var i = 0; i < 16; i++) { output[i] = keys[i]; } // privKey
+}
+
+@compute @workgroup_size(1)
+fn derive2() {
+  var keys: array<u32, 16>;
+  var keysPub: array<u32, 16>;
+  for (var i = 0; i < 16; i++) { keys[i] = input[i]; }
+  for (var i = 0; i < 16; i++) { keysPub[i] = input[i+16]; }
+  deriveChild2(&keys, &keysPub, 0, 0, 0x03);
 
   for (var i = 0; i < 16; i++) { output[i] = keys[i]; } // privKey
 }
