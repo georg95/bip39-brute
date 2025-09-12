@@ -82,22 +82,47 @@ function prepareSha256Block(input) {
 
 async function testSha256() {
     const inp = new Uint32Array(1024).fill(0)
-    const PASSWORD = new TextEncoder().encode('')
+    const PASSWORD = new TextEncoder().encode('password password password')
     inp.set(prepareSha256Block(PASSWORD))
 
     const infer = await webGPUinit({})
     const out = await infer({ shader: 'wgsl/sha256.wgsl', func: 'sha256', inp })
     const sha256 = toHex(new Uint8Array(await crypto.subtle.digest('SHA-256', PASSWORD)))
     const resSha256 = Array.from(out.slice(0, 8)).map(x => x.toString(16).padStart(8, '0')).join('')
-    console.log(resSha256)
     console.log(sha256)
-    if (resSha256 === sha256) {
+    console.log(resSha256)
+    if (sha256 === resSha256) {
         console.log('✅ sha256 wgsl PASSED')
     } else {
         console.log('❌ sha256 wgsl FAILED')
     }
 }
-testSha256()
+// testSha256()
+
+function leSwap(str) {
+    return str[6]+str[7]+str[4]+str[5]+str[2]+str[3]+str[0]+str[1]
+}
+
+async function testRipemd160() {
+    const inp = new Uint32Array(1024).fill(0)
+    var strbuf = new Uint8Array(inp.buffer, inp.byteOffset, inp.byteLength)
+    const PASSWORD = 'password'
+    inp[0] = PASSWORD.length
+    strbuf.set(new TextEncoder().encode(PASSWORD), 4)
+
+    const infer = await webGPUinit({})
+    const out = await infer({ shader: 'wgsl/ripemd160.wgsl', func: 'ripemd160', inp })
+    const ripemd160 = '2c08e8f5884750a7b99f6f2f342fc638db25ff31'
+    const resRipemd160 = Array.from(out.slice(0, 5)).map(x => leSwap(x.toString(16).padStart(8, '0'))).join('')
+    console.log(ripemd160)
+    console.log(resRipemd160)
+    if (ripemd160 === resRipemd160) {
+        console.log('✅ ripemd160 PASSED')
+    } else {
+        console.log('❌ ripemd160 FAILED')
+    }
+}
+testRipemd160()
 
 async function testDerive1() {
     const inp = new Uint32Array(1024).fill(0)
