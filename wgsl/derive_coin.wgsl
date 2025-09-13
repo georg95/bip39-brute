@@ -275,7 +275,7 @@ fn deriveSeed(keys: ptr<function, array<u32, 16>>) {
   var data: array<u32, 32>;
   for (var i = 0; i < 16; i++) { key[i] = 0; }
   key[0] = 0x42697463; key[1] = 0x6f696e20; key[2] = 0x73656564;
-  for (var i = 0; i < 32; i++) { data[i] = input[i+16]; }
+  for (var i = 0; i < 32; i++) { data[i] = input[i]; }
   hmacSha512(&key, &data, 64, keys);
 }
 

@@ -576,7 +576,7 @@ fn main() {
 
   // TODO derive private keys
   var privKey: array<u32, 8>;
-  for (var i = 0; i < 8; i++) { privKey[i] = input[i]; }
+  for (var i = 0; i < 8; i++) { privKey[i] = input[7-i]; }
   let mask: u32 = 0xffu;
   var carry: u32 = 0u;
   for (var w = 0u; w < 32; w++) { // 4x8
@@ -600,11 +600,7 @@ fn main() {
   }
   toAffine(&ptA, &p);
 
-  // for (var i: u32 = 0; i < 10; i++) { output[i] = ptA.x[i]; }
-  // for (var i: u32 = 0; i < 10; i++) { output[i+10] = ptA.y[i]; }
-  for (var i: u32 = 0; i < 8; i++) { output[7 - i] = input[i]; }
-  for (var i: u32 = 0; i < 8; i++) { output[7 - i + 8] = input[i + 8]; }
+  for (var i: u32 = 0; i < 16; i++) { output[i] = input[i]; }
   store26x10(&ptA.x, 16);
   store26x10(&ptA.y, 24);
-  // TODO write 16 x u32 = 64 bytes
 }
