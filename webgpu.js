@@ -15,10 +15,13 @@ async function testPipeline() {
     const inp = new Uint32Array(1024).fill(0)
     var strbuf = new Uint8Array(inp.buffer, inp.byteOffset, inp.byteLength)
     const MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
-    const PASSWORD = ''
+    const PASSWORD = 'abc'
+    let passwordOffset = 200
     strbuf.set(new TextEncoder().encode(MNEMONIC))
-    strbuf.set(new TextEncoder().encode(PASSWORD), 200)
+    strbuf.set(new TextEncoder().encode(PASSWORD), passwordOffset)
     bufUint32LESwap(strbuf)
+    inp[32] = passwordOffset
+    inp[33] = passwordOffset + PASSWORD.length + 1
 
     const { inference, buildShader, swapBuffers } = await webGPUinit({ precomputeTable })
     let shaders = []
@@ -38,7 +41,7 @@ async function testPipeline() {
     swapBuffers()
     shaders.push(await buildShader('wgsl/hash160.wgsl'))
     const out = await inference({ shaders, inp })
-    const resHash160 = Array.from(out.slice(0, 5)).map(x => leSwap(x.toString(16).padStart(8, '0'))).join('')
+    const resHash160 = Array.from(out.slice(5, 10)).map(x => leSwap(x.toString(16).padStart(8, '0'))).join('')
     console.log(resHash160)
     if (resHash160 === 'd986ed01b7a22225a70edbf2ba7cfb63a15cb3aa') {
         console.log('✅ wgsl pipeline PASSED')

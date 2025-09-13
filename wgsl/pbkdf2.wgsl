@@ -140,8 +140,8 @@ fn setByteArr(arr: ptr<function, array<u32, 32>>, idx: u32, byte: u32) {
 
 const MAX_PASSWORD_LEN: u32 = 128 - 9; // 0x00000001 (4 bytes) 0x80 (1 byte) %%seed bits%% (4 bytes)
 
-@compute @workgroup_size(1)
-fn main() {
+@compute @workgroup_size(2)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   var IV = array<u32,16>(
       0x6a09e667, 0xf3bcc908, 0xbb67ae85, 0x84caa73b,
       0x3c6ef372, 0xfe94f82b, 0xa54ff53a, 0x5f1d36f1,
@@ -158,7 +158,7 @@ fn main() {
   for (var i = 0; i < 32; i += 1) { tmp_buf[i] = 0; }
   tmp_buf[0] = 0x6d6e656d; // mnem
   tmp_buf[1] = 0x6f6e6963; // onic
-  var passOffset: u32 = 200;
+  var passOffset: u32 = input[gid.x + 32u];
 
   var passLen: u32 = 0;
   for (; passLen < MAX_PASSWORD_LEN; passLen++) {
@@ -192,7 +192,7 @@ fn main() {
       for (var i = 0; i < 16; i += 1) { dk[i] ^= new_block[i]; }
   }
 
-  for (var i = 0; i < 16; i += 1) {
-    output[i] = dk[i];
+  for (var i: u32 = 0; i < 16; i += 1) {
+    output[gid.x * 16u + i] = dk[i];
   }
 }

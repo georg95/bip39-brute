@@ -270,35 +270,36 @@ fn deriveChild(keys: ptr<function, array<u32, 16>>, network: u32, coin: u32) {
   }
 }
 
-fn deriveSeed(keys: ptr<function, array<u32, 16>>) {
+fn deriveSeed(keys: ptr<function, array<u32, 16>>, offset: u32) {
   var key: array<u32, 16>;
   var data: array<u32, 32>;
   for (var i = 0; i < 16; i++) { key[i] = 0; }
   key[0] = 0x42697463; key[1] = 0x6f696e20; key[2] = 0x73656564;
-  for (var i = 0; i < 32; i++) { data[i] = input[i]; }
+  for (var i: u32 = 0; i < 16; i++) { data[i] = input[offset + i]; }
+  for (var i: u32 = 16; i < 32; i++) { data[i] = 0; }
   hmacSha512(&key, &data, 64, keys);
 }
 
 @group(0) @binding(0) var<storage, read> input: array<u32>;
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;
-@compute @workgroup_size(1)
-fn derive1() {
+@compute @workgroup_size(2)
+fn derive1(@builtin(global_invocation_id) gid: vec3<u32>) {
   var keys: array<u32, 16>;
-  deriveSeed(&keys);
+  deriveSeed(&keys, gid.x * 16u);
   deriveChild(&keys, 128, 44);
   deriveChild(&keys, 128, 0);
   deriveChild(&keys, 128, 0);
 
-  for (var i = 0; i < 16; i++) { output[i] = keys[i]; } // privKey
+  for (var i: u32 = 0; i < 16; i++) { output[gid.x * 16u + i] = keys[i]; }
 }
 
-@compute @workgroup_size(1)
-fn derive2() {
+@compute @workgroup_size(2)
+fn derive2(@builtin(global_invocation_id) gid: vec3<u32>) {
   var keys: array<u32, 16>;
   var keysPub: array<u32, 16>;
-  for (var i = 0; i < 16; i++) { keys[i] = input[i]; }
-  for (var i = 0; i < 16; i++) { keysPub[i] = input[i+16]; }
+  for (var i: u32 = 0; i < 16; i++) { keys[i]    = input[gid.x * 32u + i]; }
+  for (var i: u32 = 0; i < 16; i++) { keysPub[i] = input[gid.x * 32u + 16 + i]; }
   deriveChild2(&keys, &keysPub, 0, 0, 0x03);
 
-  for (var i = 0; i < 16; i++) { output[i] = keys[i]; } // privKey
+  for (var i: u32 = 0; i < 16; i++) { output[gid.x * 16u + i] = keys[i]; }
 }

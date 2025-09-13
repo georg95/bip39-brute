@@ -11,15 +11,15 @@ fn load26x10(inp: ptr<function, array<u32, 8>>, out: ptr<function, array<u32, 10
     out[9] = inp[7] >> 10;
 }
 
-fn store26x10(a: ptr<function, array<u32, 10>>, index: u32) {
-    output[index+7] = a[0] | (a[1] << 26);
-    output[index+6] = (a[1] >> 6) | (a[2] << 20);
-    output[index+5] = (a[2] >> 12) | (a[3] << 14);
-    output[index+4] = (a[3] >> 18) | (a[4] << 8);
-    output[index+3] = (a[4] >> 24) | (a[5] << 2) | (a[6] << 28);
-    output[index+2] = (a[6] >> 4) | (a[7] << 22);
-    output[index+1] = (a[7] >> 10) | (a[8] << 16);
-    output[index] = (a[8] >> 16) | (a[9] << 10);
+fn store26x10(a: ptr<function, array<u32, 10>>, offset: u32) {
+    output[offset+7] = a[0] | (a[1] << 26);
+    output[offset+6] = (a[1] >> 6) | (a[2] << 20);
+    output[offset+5] = (a[2] >> 12) | (a[3] << 14);
+    output[offset+4] = (a[3] >> 18) | (a[4] << 8);
+    output[offset+3] = (a[4] >> 24) | (a[5] << 2) | (a[6] << 28);
+    output[offset+2] = (a[6] >> 4) | (a[7] << 22);
+    output[offset+1] = (a[7] >> 10) | (a[8] << 16);
+    output[offset] = (a[8] >> 16) | (a[9] << 10);
 }
 
 struct u64 { hi: u32, lo: u32 };
@@ -560,8 +560,8 @@ fn toAffine(r: ptr<function, affinePoint>, a: ptr<function, normalPoint>) {
 @group(0) @binding(0) var<storage, read> input: array<u32>;
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;
 @group(0) @binding(2) var<storage, read> prec_table: array<u32>;
-@compute @workgroup_size(1)
-fn main() {
+@compute @workgroup_size(2)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   var G256x: array<u32, 8> = array<u32, 8>(0xeb9a9787, 0x92f76cc4, 0x59599680, 0x89bdde81, 0xbbd3788d, 0x74669716, 0xef5ba060, 0xdd3625fa);         
   var G256y: array<u32, 8> = array<u32, 8>(0xc644a573, 0x37f68d00, 0x28833959, 0x94146198, 0x045731ca, 0x61da2501, 0x520e30d4, 0x7a188fa3);
   var G256x10: array<u32, 10>; var G256y10: array<u32, 10>;
@@ -575,7 +575,7 @@ fn main() {
   set0pt(&ptTmp);
 
   var privKey: array<u32, 8>;
-  for (var i = 0; i < 8; i++) { privKey[i] = input[7-i]; }
+  for (var i: u32 = 0; i < 8; i++) { privKey[i] = input[gid.x * 16u + 7u - i]; }
   let mask: u32 = 0xffu;
   var carry: u32 = 0u;
   for (var w = 0u; w < 32; w++) {
@@ -599,7 +599,7 @@ fn main() {
   }
   toAffine(&ptA, &p);
 
-  for (var i: u32 = 0; i < 16; i++) { output[i] = input[i]; }
-  store26x10(&ptA.x, 16);
-  store26x10(&ptA.y, 24);
+  for (var i: u32 = 0; i < 16; i++) { output[gid.x * 32u + i] = input[gid.x * 16u + i]; }
+  store26x10(&ptA.x, gid.x * 32u + 16u);
+  store26x10(&ptA.y, gid.x * 32u + 24u);
 }

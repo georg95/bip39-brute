@@ -22,17 +22,17 @@ fn ch(e: u32, f: u32, g: u32) -> u32 { return (e & f) ^ ((~e) & g); }
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;
 
 fn sha256(out: ptr<function, array<u32, 8>>, offset: u32) {
-    var w = array<u32,64>();
+    var w = array<u32, 64>();
     for (var i = 0u; i < 16u; i++) {w[i] = 0; }
-    w[0] = (input[16] >> 8) | (((input[31] & 1) + 2) << 24);
-    w[1] = (input[17] >> 8) | (input[16] << 24);
-    w[2] = (input[18] >> 8) | (input[17] << 24);
-    w[3] = (input[19] >> 8) | (input[18] << 24);
-    w[4] = (input[20] >> 8) | (input[19] << 24);
-    w[5] = (input[21] >> 8) | (input[20] << 24);
-    w[6] = (input[22] >> 8) | (input[21] << 24);
-    w[7] = (input[23] >> 8) | (input[22] << 24);
-    w[8] = (input[23] << 24) | 0x800000;
+    w[0] = (input[offset + 16u] >> 8) | (((input[offset + 31u] & 1) + 2) << 24);
+    w[1] = (input[offset + 17u] >> 8) | (input[offset + 16u] << 24);
+    w[2] = (input[offset + 18u] >> 8) | (input[offset + 17u] << 24);
+    w[3] = (input[offset + 19u] >> 8) | (input[offset + 18u] << 24);
+    w[4] = (input[offset + 20u] >> 8) | (input[offset + 19u] << 24);
+    w[5] = (input[offset + 21u] >> 8) | (input[offset + 20u] << 24);
+    w[6] = (input[offset + 22u] >> 8) | (input[offset + 21u] << 24);
+    w[7] = (input[offset + 23u] >> 8) | (input[offset + 22u] << 24);
+    w[8] = (input[offset + 23u] << 24) | 0x800000;
     w[15] = 33 * 8; // 33 bytes = 33 * 8 bits
     for (var i = 16u; i < 64u; i++){
         w[i] = w[i - 16u] + g0(w[i - 15u]) + w[i - 7u] + g1(w[i - 2u]);
@@ -188,14 +188,14 @@ fn ripemd160(inp: ptr<function, array<u32, 8>>) {
     inp[4] = h4;
 }
 
-@compute @workgroup_size(1)
-fn main() {
+@compute @workgroup_size(2)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var out: array<u32, 8>;
-    sha256(&out, 0);
+    sha256(&out, gid.x * 32u);
     ripemd160(&out);
-    output[0] = out[0];
-    output[1] = out[1];
-    output[2] = out[2];
-    output[3] = out[3];
-    output[4] = out[4];
+    output[gid.x * 5u] = out[0];
+    output[gid.x * 5u + 1u] = out[1];
+    output[gid.x * 5u + 2u] = out[2];
+    output[gid.x * 5u + 3u] = out[3];
+    output[gid.x * 5u + 4u] = out[4];
 }
