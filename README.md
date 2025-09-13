@@ -26,12 +26,12 @@ bc1q0esjzsh4et4wxrfumglc97fpksvmwp8dwuwdxx
 - [x] Tron wallets
 - [ ] Password bruteforce mode
 - [ ] WebGPU backend
-  - [ ] SHA-256
+  - [x] SHA-256
   - [x] SHA-512
   - [x] PBKDF2-HMAC-512
   - [x] secp256k1
-  - [ ] ripemd160
+  - [x] ripemd160
+  - [x] Mnemonic to seed
+  - [x] Derive path
   - [ ] Mnemonic checksum
-  - [ ] Mnemonic to seed
   - [ ] Mnemonic to seeds batch
-  - [ ] Derive path

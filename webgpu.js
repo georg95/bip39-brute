@@ -1,16 +1,3 @@
-/*
-  1. pbkdf2
-  2. derive1
-  3. secp256k1
-  4. derive2
-  5. secp256k1
-
-  TODO: 6. derive3
-  TODO: 7. secp256k1.2
-  8. sha256
-  TODO: 9. ripemd160
-*/ 
-
 function bufUint32LESwap(buf) {
     for (let i = 0; i + 3 < buf.length; i += 4) {
         const a = buf[i]
@@ -88,49 +75,23 @@ function prepareSha256Block(input) {
   return words;
 }
 
-async function testSha256() {
-    const inp = new Uint32Array(1024).fill(0)
-    const PASSWORD = new TextEncoder().encode('password password password')
-    inp.set(prepareSha256Block(PASSWORD))
-
+async function testHash160() {
+    var inp = u32Buf('e284129cc0922579a535bbf4d1a3b25773090d28c909bc0fed73b5e0222cc372213909708058e0ec4a99c19d8e041c014ae6c7dc21d2a1fac86772df7ca357a6aaeb52dd7494c361049de67cc680e83ebcbbbdbeb13637d92cd845f70308af5e9370164133294e5fd1679672fe7866c307daf97281a28f66dca7cbb52919824f')
     const infer = await webGPUinit({})
-    const out = await infer({ shader: 'wgsl/sha256.wgsl', func: 'sha256', inp })
-    const sha256 = toHex(new Uint8Array(await crypto.subtle.digest('SHA-256', PASSWORD)))
-    const resSha256 = Array.from(out.slice(0, 8)).map(x => x.toString(16).padStart(8, '0')).join('')
-    console.log(sha256)
-    console.log(resSha256)
-    if (sha256 === resSha256) {
-        console.log('✅ sha256 wgsl PASSED')
+    const out = await infer({ shader: 'wgsl/hash160.wgsl', inp })
+    const resHash160 = Array.from(out.slice(0, 5)).map(x => leSwap(x.toString(16).padStart(8, '0'))).join('')
+    console.log(resHash160)
+    if (resHash160 === 'd986ed01b7a22225a70edbf2ba7cfb63a15cb3aa') {
+        console.log('✅ hash160 wgsl PASSED')
     } else {
-        console.log('❌ sha256 wgsl FAILED')
+        console.log('❌ hash160 wgsl FAILED')
     }
 }
-// testSha256()
+testHash160()
 
 function leSwap(str) {
     return str[6]+str[7]+str[4]+str[5]+str[2]+str[3]+str[0]+str[1]
 }
-
-async function testRipemd160() {
-    const inp = new Uint32Array(1024).fill(0)
-    var strbuf = new Uint8Array(inp.buffer, inp.byteOffset, inp.byteLength)
-    const PASSWORD = 'password'
-    inp[0] = PASSWORD.length
-    strbuf.set(new TextEncoder().encode(PASSWORD), 4)
-
-    const infer = await webGPUinit({})
-    const out = await infer({ shader: 'wgsl/ripemd160.wgsl', func: 'ripemd160', inp })
-    const ripemd160 = '2c08e8f5884750a7b99f6f2f342fc638db25ff31'
-    const resRipemd160 = Array.from(out.slice(0, 5)).map(x => leSwap(x.toString(16).padStart(8, '0'))).join('')
-    console.log(ripemd160)
-    console.log(resRipemd160)
-    if (ripemd160 === resRipemd160) {
-        console.log('✅ ripemd160 PASSED')
-    } else {
-        console.log('❌ ripemd160 FAILED')
-    }
-}
-// testRipemd160()
 
 function u32Buf(hex) {
     const inp = new Uint32Array(1024).fill(0)
@@ -160,20 +121,30 @@ async function testDerive1() {
 }
 // testDerive1()
 
-async function testDerive2() {
-    const inp = u32Buf('fe64af825b5b78554c33a28b23085fc082f691b3c712cc1d4e66e133297da87a3da4bc190a2680111d31fadfdc905f2a7f6ce77c6f109919116f253d43445219774c910fcf07fa96886ea794f0d5caed9afe30b44b83f7e213bb92930e7df4bdde7cb503e9309ba5adeadebe758bfdbade58ffe4d362964bd4c982a4245973d9')
+async function testDerive2(Inp, Out) {
+    const inp = u32Buf(Inp)
 
     const infer = await webGPUinit({})
     const out = await infer({ shader: 'wgsl/derive_coin.wgsl', func: 'derive2', inp })
     console.log('Out:', toHex(out.slice(0, 16)))
 
-    if (toHex(out.slice(0, 16)) === '83bda5c7add17ef9bbc1f03391913fe6cc947aa18c4a343607724e815c83eeb7bce80dd580792cd18af542790e56aa813178dc28644bb5f03dbd44c85f2d2e7a') {
+    if (toHex(out.slice(0, 16)) === Out) {
         console.log('✅ testDerive2 PASSED')
     } else {
         console.log('❌ testDerive2 FAILED')
     }
 }
-// testDerive2()
+
+// Pass 1
+// testDerive2(
+//     'fe64af825b5b78554c33a28b23085fc082f691b3c712cc1d4e66e133297da87a3da4bc190a2680111d31fadfdc905f2a7f6ce77c6f109919116f253d43445219774c910fcf07fa96886ea794f0d5caed9afe30b44b83f7e213bb92930e7df4bdde7cb503e9309ba5adeadebe758bfdbade58ffe4d362964bd4c982a4245973d9',
+//     '83bda5c7add17ef9bbc1f03391913fe6cc947aa18c4a343607724e815c83eeb7bce80dd580792cd18af542790e56aa813178dc28644bb5f03dbd44c85f2d2e7a'
+// )
+
+// testDerive2(
+//     '83bda5c7add17ef9bbc1f03391913fe6cc947aa18c4a343607724e815c83eeb7bce80dd580792cd18af542790e56aa813178dc28644bb5f03dbd44c85f2d2e7a86b865b52b753d0a84d09bc20063fab5d8453ec33c215d4019a5801c9c6438b917770b2782e29a9ecc6edb67cd1f0fbf05ec4c1236884b6d686d6be3b1588abb',
+//     'e284129cc0922579a535bbf4d1a3b25773090d28c909bc0fed73b5e0222cc372213909708058e0ec4a99c19d8e041c014ae6c7dc21d2a1fac86772df7ca357a6'
+// )
 
 function fromHexString (hexString) { return Uint8Array.from(hexString.match(/.{1,2}/g).map((byte) => parseInt(byte, 16))) }
 function BigToU32_reverse(n) {
@@ -222,6 +193,11 @@ async function testSecp256k1(Inp, Out) {
 // testSecp256k1(
 //     '83bda5c7add17ef9bbc1f03391913fe6cc947aa18c4a343607724e815c83eeb7bce80dd580792cd18af542790e56aa813178dc28644bb5f03dbd44c85f2d2e7a',
 //     '83bda5c7add17ef9bbc1f03391913fe6cc947aa18c4a343607724e815c83eeb7bce80dd580792cd18af542790e56aa813178dc28644bb5f03dbd44c85f2d2e7a86b865b52b753d0a84d09bc20063fab5d8453ec33c215d4019a5801c9c6438b917770b2782e29a9ecc6edb67cd1f0fbf05ec4c1236884b6d686d6be3b1588abb'
+// )
+
+// testSecp256k1(
+//     'e284129cc0922579a535bbf4d1a3b25773090d28c909bc0fed73b5e0222cc372213909708058e0ec4a99c19d8e041c014ae6c7dc21d2a1fac86772df7ca357a6',
+//     'e284129cc0922579a535bbf4d1a3b25773090d28c909bc0fed73b5e0222cc372213909708058e0ec4a99c19d8e041c014ae6c7dc21d2a1fac86772df7ca357a6aaeb52dd7494c361049de67cc680e83ebcbbbdbeb13637d92cd845f70308af5e9370164133294e5fd1679672fe7866c307daf97281a28f66dca7cbb52919824f',
 // )
 
 async function webGPUinit({ PRECOMPUTE_SIZE, INP_SIZE }) {
