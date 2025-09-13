@@ -1,165 +1,7 @@
-function bufUint32LESwap(buf) {
-    for (let i = 0; i + 3 < buf.length; i += 4) {
-        const a = buf[i]
-        const b = buf[i + 1]
-        const c = buf[i + 2]
-        const d = buf[i + 3]
-
-        buf[i] = d
-        buf[i + 1] = c
-        buf[i + 2] = b
-        buf[i + 3] = a
-    }
-}
-
-async function mnemonicToSeed(mnemonic, password="") {
-    const encoder = new TextEncoder()
-    const saltBuffer = encoder.encode("mnemonic"+password)
-    const mnemonicBuffer = encoder.encode(mnemonic)
-    const keyMaterial = await crypto.subtle.importKey(
-        "raw", mnemonicBuffer, { name: "PBKDF2" }, false, ["deriveBits"]);
-    const derivedBits = await crypto.subtle.deriveBits({
-        name: "PBKDF2", salt: saltBuffer, iterations: 2048, hash: "SHA-512" }, keyMaterial, 512);
-    return new Uint8Array(derivedBits);
-}
-function toHex(arr) {
-    if (arr instanceof Uint8Array) {
-        return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
-    }
-    if (arr instanceof Uint32Array) {
-        return Array.from(arr).map(b => b.toString(16).padStart(8, '0')).join('');
-    }
-    throw new Error('toHex expect u8/u32')
-}
-
-async function testPbkdf2() {
-    const inp = new Uint32Array(1024).fill(0)
-    var strbuf = new Uint8Array(inp.buffer, inp.byteOffset, inp.byteLength)
-    const MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
-    const PASSWORD = ''
-    strbuf.set(new TextEncoder().encode(MNEMONIC))
-    strbuf.set(new TextEncoder().encode(PASSWORD), 200)
-    bufUint32LESwap(strbuf)
-
-    const infer = await webGPUinit({})
-    const out = await infer({ shader: 'wgsl/pbkdf2.wgsl', inp })
-    const pbkdf2 = toHex(await mnemonicToSeed(MNEMONIC, PASSWORD))
-    const resHash = Array.from(out.slice(0, 16)).map(x => x.toString(16).padStart(8, '0')).join('')
-    console.log(resHash)
-    console.log(pbkdf2)
-    if (resHash === pbkdf2) {
-        console.log('✅ pbkdf2 wgsl PASSED')
-    } else {
-        console.log('❌ pbkdf2 wgsl FAILED')
-    }
-}
-// testPbkdf2()
-
-function prepareSha256Block(input) {
-  assert(input.length <= 61, `sha256 input ${toHex(input)} is loner than 61 bytes`)
-  const blockBytes = new Uint8Array(64);
-  blockBytes.set(input, 0);
-  blockBytes[input.length] = 0x80;
-  blockBytes[62] = (input.length * 8) >> 8;
-  blockBytes[63] = (input.length * 8) & 0xff;
-  const words = new Uint32Array(16);
-  for (let i = 0; i < 16; i++) {
-    const j = i * 4;
-    words[i] =
-      (blockBytes[j] << 24) |
-      (blockBytes[j + 1] << 16) |
-      (blockBytes[j + 2] << 8) |
-      (blockBytes[j + 3]);
-    words[i] >>>= 0;
-  }
-  return words;
-}
-
-async function testHash160() {
-    var inp = u32Buf('e284129cc0922579a535bbf4d1a3b25773090d28c909bc0fed73b5e0222cc372213909708058e0ec4a99c19d8e041c014ae6c7dc21d2a1fac86772df7ca357a6aaeb52dd7494c361049de67cc680e83ebcbbbdbeb13637d92cd845f70308af5e9370164133294e5fd1679672fe7866c307daf97281a28f66dca7cbb52919824f')
-    const infer = await webGPUinit({})
-    const out = await infer({ shader: 'wgsl/hash160.wgsl', inp })
-    const resHash160 = Array.from(out.slice(0, 5)).map(x => leSwap(x.toString(16).padStart(8, '0'))).join('')
-    console.log(resHash160)
-    if (resHash160 === 'd986ed01b7a22225a70edbf2ba7cfb63a15cb3aa') {
-        console.log('✅ hash160 wgsl PASSED')
-    } else {
-        console.log('❌ hash160 wgsl FAILED')
-    }
-}
-testHash160()
-
-function leSwap(str) {
-    return str[6]+str[7]+str[4]+str[5]+str[2]+str[3]+str[0]+str[1]
-}
-
-function u32Buf(hex) {
-    const inp = new Uint32Array(1024).fill(0)
-    assert(hex.length % 8 === 0, `setBuf expect input of length 8*n, got: ${hex}`)
-    const values = hex.match(/.{1,8}/g).map(x => parseInt(x, 16))
-    inp.set(new Uint32Array(values), 0)
-    return inp
-}
-
-async function testDerive1() {
-    const inp = u32Buf('5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4')
-
-    const infer = await webGPUinit({})
-    const out = await infer({ shader: 'wgsl/derive_coin.wgsl', func: 'derive1', inp })
-    console.log('Output:', toHex(out.slice(0, 16)));
-
-    if (toHex(out.slice(0, 8)) === 'fe64af825b5b78554c33a28b23085fc082f691b3c712cc1d4e66e133297da87a') {
-        console.log('✅ testDerive1 privKey PASSED')
-    } else {
-        console.log('❌ testDerive1 privKey FAILED')
-    }
-    if (toHex(out.slice(8, 16)) === '3da4bc190a2680111d31fadfdc905f2a7f6ce77c6f109919116f253d43445219' ) {
-        console.log('✅ testDerive1 chainCode PASSED')
-    } else {
-        console.log('❌ testDerive1 chainCode FAILED')
-    }
-}
-// testDerive1()
-
-async function testDerive2(Inp, Out) {
-    const inp = u32Buf(Inp)
-
-    const infer = await webGPUinit({})
-    const out = await infer({ shader: 'wgsl/derive_coin.wgsl', func: 'derive2', inp })
-    console.log('Out:', toHex(out.slice(0, 16)))
-
-    if (toHex(out.slice(0, 16)) === Out) {
-        console.log('✅ testDerive2 PASSED')
-    } else {
-        console.log('❌ testDerive2 FAILED')
-    }
-}
-
-// Pass 1
-// testDerive2(
-//     'fe64af825b5b78554c33a28b23085fc082f691b3c712cc1d4e66e133297da87a3da4bc190a2680111d31fadfdc905f2a7f6ce77c6f109919116f253d43445219774c910fcf07fa96886ea794f0d5caed9afe30b44b83f7e213bb92930e7df4bdde7cb503e9309ba5adeadebe758bfdbade58ffe4d362964bd4c982a4245973d9',
-//     '83bda5c7add17ef9bbc1f03391913fe6cc947aa18c4a343607724e815c83eeb7bce80dd580792cd18af542790e56aa813178dc28644bb5f03dbd44c85f2d2e7a'
-// )
-
-// testDerive2(
-//     '83bda5c7add17ef9bbc1f03391913fe6cc947aa18c4a343607724e815c83eeb7bce80dd580792cd18af542790e56aa813178dc28644bb5f03dbd44c85f2d2e7a86b865b52b753d0a84d09bc20063fab5d8453ec33c215d4019a5801c9c6438b917770b2782e29a9ecc6edb67cd1f0fbf05ec4c1236884b6d686d6be3b1588abb',
-//     'e284129cc0922579a535bbf4d1a3b25773090d28c909bc0fed73b5e0222cc372213909708058e0ec4a99c19d8e041c014ae6c7dc21d2a1fac86772df7ca357a6'
-// )
-
-function fromHexString (hexString) { return Uint8Array.from(hexString.match(/.{1,2}/g).map((byte) => parseInt(byte, 16))) }
-function BigToU32_reverse(n) {
-    const hex = n.toString(16).padStart(64, '0')
-    return hex.match(/.{1,8}/g).map(x => parseInt(x, 16)).reverse()
-}
-function BigToU32(n) {
-    const hex = n.toString(16).padStart(64, '0')
-    return hex.match(/.{1,8}/g).map(x => parseInt(x, 16))
-}
-async function testSecp256k1(Inp, Out) {
+async function testPipeline() {
     const PRECOMPUTE_WINDOW = 8
     const PRECOMPUTE_SIZE = 2 ** (PRECOMPUTE_WINDOW - 1) * (Math.ceil(256 / PRECOMPUTE_WINDOW)) * 64
     const precomputeTable = new Uint32Array(PRECOMPUTE_SIZE / 4).fill(0)
-    var start = performance.now()
     precompute(PRECOMPUTE_WINDOW, (batch, i) => {
         batch.forEach(({X, Y}, j) => {
             const index = i * batch.length + j
@@ -169,38 +11,46 @@ async function testSecp256k1(Inp, Out) {
             for (var y = 0; y < 8; y++) { precomputeTable[index*16 + 8 + y] = yy[y] }
         })
     })
-    console.log('Precomputed table in', performance.now() - start | 0, 'ms')
 
-    const infer = await webGPUinit({ PRECOMPUTE_SIZE })
-    const out = await infer({ shader: 'wgsl/secp256k1.wgsl', inp: u32Buf(Inp), precomputeTable })
-    console.log('Out:', toHex(out.slice(0, 32)))
+    const inp = new Uint32Array(1024).fill(0)
+    var strbuf = new Uint8Array(inp.buffer, inp.byteOffset, inp.byteLength)
+    const MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
+    const PASSWORD = ''
+    strbuf.set(new TextEncoder().encode(MNEMONIC))
+    strbuf.set(new TextEncoder().encode(PASSWORD), 200)
+    bufUint32LESwap(strbuf)
 
-    if (toHex(out.slice(0, 32)) === Out) {
-        console.log('✅ secp256k1 wgsl PASSED')
+    const { inference, buildShader, swapBuffers } = await webGPUinit({ precomputeTable })
+    let shaders = []
+    shaders.push(await buildShader('wgsl/pbkdf2.wgsl'))
+    swapBuffers()
+    shaders.push(await buildShader('wgsl/derive_coin.wgsl', 'derive1'))
+    swapBuffers()
+    shaders.push(await buildShader('wgsl/secp256k1.wgsl'))
+    swapBuffers()
+    shaders.push(await buildShader('wgsl/derive_coin.wgsl', 'derive2'))
+    swapBuffers()
+    shaders.push(await buildShader('wgsl/secp256k1.wgsl'))
+    swapBuffers()
+    shaders.push(await buildShader('wgsl/derive_coin.wgsl', 'derive2'))
+    swapBuffers()
+    shaders.push(await buildShader('wgsl/secp256k1.wgsl'))
+    swapBuffers()
+    shaders.push(await buildShader('wgsl/hash160.wgsl'))
+    const out = await inference({ shaders, inp })
+    const resHash160 = Array.from(out.slice(0, 5)).map(x => leSwap(x.toString(16).padStart(8, '0'))).join('')
+    console.log(resHash160)
+    if (resHash160 === 'd986ed01b7a22225a70edbf2ba7cfb63a15cb3aa') {
+        console.log('✅ wgsl pipeline PASSED')
     } else {
-        console.log('❌ secp256k1 wgsl FAILED')
+        console.log('❌ wgsl pipeline FAILED')
     }
 }
-// Pass 1
+testPipeline()
 
-// testSecp256k1(
-//     'fe64af825b5b78554c33a28b23085fc082f691b3c712cc1d4e66e133297da87a3da4bc190a2680111d31fadfdc905f2a7f6ce77c6f109919116f253d43445219',
-//     'fe64af825b5b78554c33a28b23085fc082f691b3c712cc1d4e66e133297da87a3da4bc190a2680111d31fadfdc905f2a7f6ce77c6f109919116f253d43445219774c910fcf07fa96886ea794f0d5caed9afe30b44b83f7e213bb92930e7df4bdde7cb503e9309ba5adeadebe758bfdbade58ffe4d362964bd4c982a4245973d9'
-// )
 
-// Pass 2
-
-// testSecp256k1(
-//     '83bda5c7add17ef9bbc1f03391913fe6cc947aa18c4a343607724e815c83eeb7bce80dd580792cd18af542790e56aa813178dc28644bb5f03dbd44c85f2d2e7a',
-//     '83bda5c7add17ef9bbc1f03391913fe6cc947aa18c4a343607724e815c83eeb7bce80dd580792cd18af542790e56aa813178dc28644bb5f03dbd44c85f2d2e7a86b865b52b753d0a84d09bc20063fab5d8453ec33c215d4019a5801c9c6438b917770b2782e29a9ecc6edb67cd1f0fbf05ec4c1236884b6d686d6be3b1588abb'
-// )
-
-// testSecp256k1(
-//     'e284129cc0922579a535bbf4d1a3b25773090d28c909bc0fed73b5e0222cc372213909708058e0ec4a99c19d8e041c014ae6c7dc21d2a1fac86772df7ca357a6',
-//     'e284129cc0922579a535bbf4d1a3b25773090d28c909bc0fed73b5e0222cc372213909708058e0ec4a99c19d8e041c014ae6c7dc21d2a1fac86772df7ca357a6aaeb52dd7494c361049de67cc680e83ebcbbbdbeb13637d92cd845f70308af5e9370164133294e5fd1679672fe7866c307daf97281a28f66dca7cbb52919824f',
-// )
-
-async function webGPUinit({ PRECOMPUTE_SIZE, INP_SIZE }) {
+async function webGPUinit({ precomputeTable }) {
+    assert(precomputeTable, 'no precompute table passed')
     assert(window.isSecureContext, 'WebGPU disabled for http:// protocol, works only on https://')
     assert(navigator.gpu, 'Browser not support WebGPU')
     const adapter = await navigator.gpu.requestAdapter()
@@ -214,42 +64,45 @@ async function webGPUinit({ PRECOMPUTE_SIZE, INP_SIZE }) {
     const BUF_SIZE = 1024 * 4
 
     const secp256k1PrecomputeBuffer = device.createBuffer({
-        size: PRECOMPUTE_SIZE || BUF_SIZE,
+        size: precomputeTable.length * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
     })
 
-    const inpBuffer = device.createBuffer({
-        size: INP_SIZE || BUF_SIZE,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
-    })
-
-    const outBuffer = device.createBuffer({
-        size: BUF_SIZE,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
-    })
+    var buffers = {
+        inp: device.createBuffer({
+            size: BUF_SIZE,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+        }),
+        out: device.createBuffer({
+            size: BUF_SIZE,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+        }),
+    }
 
     const stagingBuffer = device.createBuffer({
         size: BUF_SIZE,
         usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
     });
 
-    async function inference({ shader, func, inp, precomputeTable }) {
+    const inpBuffer = buffers.inp
+
+    async function inference({ shaders, inp }) {
         var start = performance.now()
-        assert(inp?.length === (INP_SIZE || BUF_SIZE) / 4, `expected input size to be ${BUF_SIZE / 4}, got ${inp?.length}`)
+        assert(inp?.length === (BUF_SIZE) / 4, `expected input size to be ${BUF_SIZE / 4}, got ${inp?.length}`)
         device.queue.writeBuffer(inpBuffer, 0, inp)
-        if (precomputeTable) {
-            device.queue.writeBuffer(secp256k1PrecomputeBuffer, 0, precomputeTable)
-        }
+        device.queue.writeBuffer(secp256k1PrecomputeBuffer, 0, precomputeTable)
+
         const commandEncoder = device.createCommandEncoder()
         const passEncoder = commandEncoder.beginComputePass()
-        console.log('inference.init:', performance.now() - start | 0, 'ms'); start = performance.now()
-        const { bindGroup, pipeline } = await runShader(shader, func)
-        console.log('inference.initShader:', performance.now() - start | 0, 'ms'); start = performance.now()
-        passEncoder.setBindGroup(0, bindGroup)
-        passEncoder.setPipeline(pipeline)
-        passEncoder.dispatchWorkgroups(1)
+
+        for(let { bindGroup, pipeline } of shaders) {
+            passEncoder.setBindGroup(0, bindGroup)
+            passEncoder.setPipeline(pipeline)
+            passEncoder.dispatchWorkgroups(1)
+        }
+
         passEncoder.end()
-        commandEncoder.copyBufferToBuffer(outBuffer, 0, stagingBuffer, 0, BUF_SIZE)
+        commandEncoder.copyBufferToBuffer(buffers.out, 0, stagingBuffer, 0, BUF_SIZE)
         device.queue.submit([commandEncoder.finish()])
         console.log('inference.initCompute:', performance.now() - start | 0, 'ms'); start = performance.now()
         await stagingBuffer.mapAsync(GPUMapMode.READ, 0, BUF_SIZE)
@@ -259,8 +112,8 @@ async function webGPUinit({ PRECOMPUTE_SIZE, INP_SIZE }) {
         stagingBuffer.unmap()
         console.log('inference.copy:', performance.now() - start | 0, 'ms'); start = performance.now()
         secp256k1PrecomputeBuffer.destroy()
-        inpBuffer.destroy()
-        outBuffer.destroy()
+        buffers.inp.destroy()
+        buffers.out.destroy()
         stagingBuffer.destroy()
         closed = true
         device.destroy()
@@ -268,10 +121,9 @@ async function webGPUinit({ PRECOMPUTE_SIZE, INP_SIZE }) {
         return data
     }
 
-    async function runShader(shaderURL, func='main') {
+    async function buildShader(shaderURL, func='main') {
         var start = performance.now()
         const code = await fetch(shaderURL).then(r => r.text())
-        console.log('inference.runShader.fetch:', performance.now() - start | 0, 'ms'); start = performance.now()
         const bindGroupLayout = device.createBindGroupLayout({
             entries: [
                 {
@@ -291,20 +143,21 @@ async function webGPUinit({ PRECOMPUTE_SIZE, INP_SIZE }) {
                 },
             ],
         });
+        const inpBuf = buffers.inp
+        const outBuf = buffers.out
         const bindGroup = device.createBindGroup({
             layout: bindGroupLayout,
             entries: [{
                 binding: 0,
-                resource: { buffer: inpBuffer },
+                resource: { buffer: inpBuf },
             }, {
                 binding: 1,
-                resource: { buffer: outBuffer },
+                resource: { buffer: outBuf },
             }, {
                 binding: 2,
                 resource: { buffer: secp256k1PrecomputeBuffer },
             }],
         })
-        console.log('inference.runShader.createBindGroups:', performance.now() - start | 0, 'ms'); start = performance.now()
         const pipeline = device.createComputePipeline({
             layout: device.createPipelineLayout({
                 bindGroupLayouts: [bindGroupLayout],
@@ -316,16 +169,25 @@ async function webGPUinit({ PRECOMPUTE_SIZE, INP_SIZE }) {
                 entryPoint: func,
             },
         });
-        console.log('inference.runShader.createComputePipeline:', performance.now() - start | 0, 'ms'); start = performance.now()
-
         return {
             bindGroup,
             pipeline,
         }
     }
 
-    return inference
+    return {
+        swapBuffers() {
+            var inp = buffers.inp
+            var out = buffers.out
+            buffers.inp = out
+            buffers.out = inp
+        },
+        inference,
+        buildShader,
+    }
 }
+
+// ====================================== helper methods
 
 function assert(cond, text) {
     if (!cond) {
@@ -333,4 +195,46 @@ function assert(cond, text) {
         err.stack = err.stack.split('\n').filter(x => !x.includes('at assert')).join('\n')
         throw err
     }
+}
+
+function leSwap(str) {
+    return str[6]+str[7]+str[4]+str[5]+str[2]+str[3]+str[0]+str[1]
+}
+
+function bufUint32LESwap(buf) {
+    for (let i = 0; i + 3 < buf.length; i += 4) {
+        const a = buf[i]
+        const b = buf[i + 1]
+        const c = buf[i + 2]
+        const d = buf[i + 3]
+
+        buf[i] = d
+        buf[i + 1] = c
+        buf[i + 2] = b
+        buf[i + 3] = a
+    }
+}
+
+function toHex(arr) {
+    if (arr instanceof Uint8Array) {
+        return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+    if (arr instanceof Uint32Array) {
+        return Array.from(arr).map(b => b.toString(16).padStart(8, '0')).join('');
+    }
+    throw new Error('toHex expect u8/u32')
+}
+
+function u32Buf(hex) {
+    const inp = new Uint32Array(1024).fill(0)
+    assert(hex.length % 8 === 0, `setBuf expect input of length 8*n, got: ${hex}`)
+    const values = hex.match(/.{1,8}/g).map(x => parseInt(x, 16))
+    inp.set(new Uint32Array(values), 0)
+    return inp
+}
+
+function fromHexString (hexString) { return Uint8Array.from(hexString.match(/.{1,2}/g).map((byte) => parseInt(byte, 16))) }
+function BigToU32_reverse(n) {
+    const hex = n.toString(16).padStart(64, '0')
+    return hex.match(/.{1,8}/g).map(x => parseInt(x, 16)).reverse()
 }

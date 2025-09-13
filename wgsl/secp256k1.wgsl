@@ -574,12 +574,11 @@ fn main() {
   set0pt(&p);
   set0pt(&ptTmp);
 
-  // TODO derive private keys
   var privKey: array<u32, 8>;
   for (var i = 0; i < 8; i++) { privKey[i] = input[7-i]; }
   let mask: u32 = 0xffu;
   var carry: u32 = 0u;
-  for (var w = 0u; w < 32; w++) { // 4x8
+  for (var w = 0u; w < 32; w++) {
     let index: u32 = w / 4u;
     let part = w%4u;
     var wbits: i32 = i32(((privKey[index] >> (part * 8u)) & mask) + carry);
