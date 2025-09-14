@@ -1,4 +1,4 @@
-async function testPipeline() {
+async function prepareCompute() {
     const PRECOMPUTE_WINDOW = 8
     const PRECOMPUTE_SIZE = 2 ** (PRECOMPUTE_WINDOW - 1) * (Math.ceil(256 / PRECOMPUTE_WINDOW)) * 64
     const precomputeTable = new Uint32Array(PRECOMPUTE_SIZE / 4).fill(0)
@@ -11,17 +11,6 @@ async function testPipeline() {
             for (var y = 0; y < 8; y++) { precomputeTable[index*16 + 8 + y] = yy[y] }
         })
     })
-
-    const inp = new Uint32Array(1024).fill(0)
-    var strbuf = new Uint8Array(inp.buffer, inp.byteOffset, inp.byteLength)
-    const MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
-    const PASSWORD = 'abc'
-    let passwordOffset = 200
-    strbuf.set(new TextEncoder().encode(MNEMONIC))
-    strbuf.set(new TextEncoder().encode(PASSWORD), passwordOffset)
-    bufUint32LESwap(strbuf)
-    inp[32] = passwordOffset
-    inp[33] = passwordOffset + PASSWORD.length + 1
 
     const { inference, buildShader, swapBuffers } = await webGPUinit({ precomputeTable })
     let shaders = []
@@ -40,17 +29,43 @@ async function testPipeline() {
     shaders.push(await buildShader('wgsl/secp256k1.wgsl'))
     swapBuffers()
     shaders.push(await buildShader('wgsl/hash160.wgsl'))
-    const out = await inference({ shaders, inp })
-    const resHash160 = Array.from(out.slice(5, 10)).map(x => leSwap(x.toString(16).padStart(8, '0'))).join('')
-    console.log(resHash160)
-    if (resHash160 === 'd986ed01b7a22225a70edbf2ba7cfb63a15cb3aa') {
-        console.log('✅ wgsl pipeline PASSED')
-    } else {
-        console.log('❌ wgsl pipeline FAILED')
-    }
-}
-testPipeline()
 
+    return (inp, count) => inference({ shaders, inp, count })
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    const inference = await prepareCompute()
+    window.benchmark.onclick = async () => {
+        console.log('Test pipelie...')
+        const inp = new Uint32Array(128 * 1024 * 8).fill(0)
+        var strbuf = new Uint8Array(inp.buffer, inp.byteOffset, inp.byteLength)
+        const MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
+        strbuf.set(new TextEncoder().encode(MNEMONIC))
+
+        const passwords = 1024 * 8
+        const PASSWORD = 'password'
+        let passwordOffset = 128 + passwords * 4
+        for (let i = 0; i < passwords; i++) {
+            const curPass = PASSWORD + i.toString(10)
+            strbuf.set(new TextEncoder().encode(curPass), passwordOffset)
+            inp[32 + i] = passwordOffset
+            passwordOffset += curPass.length + 1
+        }
+        bufUint32LESwap(strbuf, 0, 128)
+        bufUint32LESwap(strbuf, 128 + passwords * 4, strbuf.length)
+
+        const out = await inference(inp, passwords)
+        const resHash160 = Array.from(out.slice(35 * 5, 35 * 5 + 5)).map(x => leSwap(x.toString(16).padStart(8, '0'))).join('')
+        console.log(resHash160)
+        const addrToHex = toHex(await addrToScriptHash('1PUF4cVrnYMxaeno2RuXpN2r6vLtSrsjGD').then(r => r.hash160))
+        console.log(addrToHex)
+        if (resHash160 === addrToHex) {
+            console.log('✅ wgsl pipeline PASSED')
+        } else {
+            console.log('❌ wgsl pipeline FAILED')
+        }
+    }
+})
 
 async function webGPUinit({ precomputeTable }) {
     assert(precomputeTable, 'no precompute table passed')
@@ -64,7 +79,7 @@ async function webGPUinit({ precomputeTable }) {
         console.log('Cleaned WebGPU device resources')
     })
 
-    const BUF_SIZE = 1024 * 4
+    const BUF_SIZE = 128 * 1024 * 32
 
     const secp256k1PrecomputeBuffer = device.createBuffer({
         size: precomputeTable.length * 4,
@@ -89,9 +104,9 @@ async function webGPUinit({ precomputeTable }) {
 
     const inpBuffer = buffers.inp
 
-    async function inference({ shaders, inp }) {
+    async function inference({ shaders, inp, count }) {
         var start = performance.now()
-        assert(inp?.length === (BUF_SIZE) / 4, `expected input size to be ${BUF_SIZE / 4}, got ${inp?.length}`)
+        assert(inp?.length <= BUF_SIZE / 4, `expected input size to be <= ${BUF_SIZE / 4}, got ${inp?.length}`)
         device.queue.writeBuffer(inpBuffer, 0, inp)
         device.queue.writeBuffer(secp256k1PrecomputeBuffer, 0, precomputeTable)
 
@@ -101,7 +116,7 @@ async function webGPUinit({ precomputeTable }) {
         for(let { bindGroup, pipeline } of shaders) {
             passEncoder.setBindGroup(0, bindGroup)
             passEncoder.setPipeline(pipeline)
-            passEncoder.dispatchWorkgroups(1)
+            passEncoder.dispatchWorkgroups(Math.ceil(count / 64))
         }
 
         passEncoder.end()
@@ -109,18 +124,20 @@ async function webGPUinit({ precomputeTable }) {
         device.queue.submit([commandEncoder.finish()])
         console.log('inference.initCompute:', performance.now() - start | 0, 'ms'); start = performance.now()
         await stagingBuffer.mapAsync(GPUMapMode.READ, 0, BUF_SIZE)
-        console.log('inference.waitGpu:', performance.now() - start | 0, 'ms'); start = performance.now()
+        console.log(`inference.waitGpu`,count,`entries:`, performance.now() - start | 0, 'ms');
+        console.log(`Speed:`, (count / (performance.now() - start) * 1000) | 0, 'mnemonics/s'); start = performance.now()
         const copyArrayBuffer = stagingBuffer.getMappedRange(0, BUF_SIZE)
         const data = new Uint32Array(copyArrayBuffer.slice(), 0, BUF_SIZE / 4)
         stagingBuffer.unmap()
         console.log('inference.copy:', performance.now() - start | 0, 'ms'); start = performance.now()
-        secp256k1PrecomputeBuffer.destroy()
-        buffers.inp.destroy()
-        buffers.out.destroy()
-        stagingBuffer.destroy()
-        closed = true
-        device.destroy()
-        console.log('inference.clean:', performance.now() - start | 0, 'ms'); start = performance.now()
+        window.cleangpu.onclick = () => {
+            secp256k1PrecomputeBuffer.destroy()
+            buffers.inp.destroy()
+            buffers.out.destroy()
+            stagingBuffer.destroy()
+            closed = true
+            device.destroy()
+        }
         return data
     }
 
@@ -204,8 +221,8 @@ function leSwap(str) {
     return str[6]+str[7]+str[4]+str[5]+str[2]+str[3]+str[0]+str[1]
 }
 
-function bufUint32LESwap(buf) {
-    for (let i = 0; i + 3 < buf.length; i += 4) {
+function bufUint32LESwap(buf, start, end) {
+    for (let i = start; i + 3 < (end || buf.length); i += 4) {
         const a = buf[i]
         const b = buf[i + 1]
         const c = buf[i + 2]
@@ -236,7 +253,6 @@ function u32Buf(hex) {
     return inp
 }
 
-function fromHexString (hexString) { return Uint8Array.from(hexString.match(/.{1,2}/g).map((byte) => parseInt(byte, 16))) }
 function BigToU32_reverse(n) {
     const hex = n.toString(16).padStart(64, '0')
     return hex.match(/.{1,8}/g).map(x => parseInt(x, 16)).reverse()

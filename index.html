@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <title>Bitcoin Address Generator</title>
   <script src="index.js"></script>
-  <script src="webgpu.js" type="module"></script>
+  <script src="webgpu.js"></script>
   <script src="secp256k1.js"></script>
 </head>
     <style>
@@ -63,6 +63,8 @@
         <h1>Known address list</h1>
         <textarea id="addrlist" spellcheck="false">0xC7C521a558d78C01bca880BeB6e18d7a17b8e0bd</textarea>
         <button id="brute">Brute</button>
+        <button id="benchmark">Benchmark</button>
+        <button id="cleangpu">Clean</button>
         <pre id="output"></pre>
     </header>
     <header id="settings-pane">

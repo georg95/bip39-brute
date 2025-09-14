@@ -140,7 +140,7 @@ fn setByteArr(arr: ptr<function, array<u32, 32>>, idx: u32, byte: u32) {
 
 const MAX_PASSWORD_LEN: u32 = 128 - 9; // 0x00000001 (4 bytes) 0x80 (1 byte) %%seed bits%% (4 bytes)
 
-@compute @workgroup_size(2)
+@compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   var IV = array<u32,16>(
       0x6a09e667, 0xf3bcc908, 0xbb67ae85, 0x84caa73b,
