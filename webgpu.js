@@ -11,8 +11,10 @@ async function prepareCompute() {
             for (var y = 0; y < 8; y++) { precomputeTable[index*16 + 8 + y] = yy[y] }
         })
     })
+    return precomputeTable
+}
 
-    const { inference, buildShader, swapBuffers } = await webGPUinit({ precomputeTable })
+async function buildEntirePipeline({ buildShader, swapBuffers }) {
     let shaders = []
     shaders.push(await buildShader('wgsl/pbkdf2.wgsl'))
     swapBuffers()
@@ -29,20 +31,20 @@ async function prepareCompute() {
     shaders.push(await buildShader('wgsl/secp256k1.wgsl'))
     swapBuffers()
     shaders.push(await buildShader('wgsl/hash160.wgsl'))
-
-    return (inp, count) => inference({ shaders, inp, count })
+    return shaders
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
-    window.initb.onclick = async () => {
-        console.log('Init...')
-        inference = await prepareCompute()
-        console.log('Init OK')
+document.addEventListener('DOMContentLoaded', () => {
+    function log(text, clear=false) {
+        if (clear) window.output.innerHTML = ''
+        window.output.innerHTML += text + '\n'
     }
-    let inference = null
-    window.benchmark.onclick = async () => {
-        assert(inference, 'initialize compute first')
-        console.log('Test pipelie...')
+    async function runBenchmark(options) {
+        const { name, clean, inference, buildShader, swapBuffers } = await webGPUinit(options)
+        log(`\n[${name}]\n`)
+        window.output.innerHTML += 'Initialize data... '
+        const start = performance.now()
+        const pipeline = await buildEntirePipeline({ buildShader, swapBuffers })
         const passwords = 1024 * 8
         const inp = new Uint32Array(128 * passwords).fill(0)
         var strbuf = new Uint8Array(inp.buffer, inp.byteOffset, inp.byteLength)
@@ -59,30 +61,71 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         bufUint32LESwap(strbuf, 0, 128)
         bufUint32LESwap(strbuf, 128 + passwords * 4, strbuf.length)
+        
+        log(`[${((performance.now() - start) / 1000).toFixed(1)}s]\n`)
+        for (let mode of ['pbkdf2', 'all']) {
+            if (mode === 'pbkdf2') {
+                log('Pbkdf2-hmac-sha512:')
+                shaders = [pipeline[0]]
+            }
+            if (mode === 'all') {
+                log('\nMnemonic to address:')
+                shaders = pipeline
+            }
+            for (let i = 0; i < 8; i++) {
+                const batchSize = 64 * (2 ** i)
+                const start = performance.now()
+                let out
+                for (let x = 0; x < 5; x++) {
+                    out = await inference({ shaders, inp, count: batchSize })
+                }
+                const time = (performance.now() - start) / 1000
+                const resHash160 = Array.from(out.slice(35 * 5, 35 * 5 + 5)).map(x => leSwap(x.toString(16).padStart(8, '0'))).join('')
+                const addrToHex = 'f679bc9f7c11c33741b410f7a1801840f7bdf754'
+                if (mode === 'all' && resHash160 !== addrToHex) {
+                    log('❌ wgsl pipeline FAILED')
+                    log(resHash160)
+                    log(addrToHex)
+                    break
+                }
 
-        const out = await inference(inp, passwords)
-        const resHash160 = Array.from(out.slice(35 * 5, 35 * 5 + 5)).map(x => leSwap(x.toString(16).padStart(8, '0'))).join('')
-        console.log(resHash160)
-        const addrToHex = toHex(await addrToScriptHash('1PUF4cVrnYMxaeno2RuXpN2r6vLtSrsjGD').then(r => r.hash160))
-        console.log(addrToHex)
-        if (resHash160 === addrToHex) {
-            console.log('✅ wgsl pipeline PASSED')
-        } else {
-            console.log('❌ wgsl pipeline FAILED')
+                log(`Batch: ${batchSize}, Speed: ${(batchSize * 5 / time) | 0} ops/s`);
+
+                if (time > 3) {
+                    break
+                }
+            }
         }
+        clean()
+    }
+    window.benchmark.onclick = async () => {
+        assert(window.isSecureContext, 'WebGPU disabled for http:// protocol, works only on https://')
+        assert(navigator.gpu, 'Browser not support WebGPU')
+        window.benchmark.style.display = 'none'
+        window.output.innerHTML += 'Precompute secp256k1 table... '
+        const start = performance.now()
+        const precomputeTable = await prepareCompute()
+        log(`[${((performance.now() - start) / 1000).toFixed(1)}s]`)
+        const adapter1 = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" })
+        const device1 = await adapter1.requestDevice()
+        await runBenchmark({ precomputeTable, device: device1, adapter: adapter1 })
+
+        const adapter2 = await navigator.gpu.requestAdapter({ powerPreference: "low-power" })
+        const device2 = await adapter2.requestDevice()
+        if (adapter1.info.device !== adapter2.info.device || adapter1.info.description !== adapter2.info.description) {
+            window.output.innerHTML += '\n'
+            await runBenchmark({ precomputeTable, device: device2, adapter: adapter2 })
+        }
+        log('\n✅ DONE')
+        window.benchmark.style.display = ''
     }
 })
 
-async function webGPUinit({ precomputeTable }) {
+async function webGPUinit({ adapter, device, precomputeTable }) {
     assert(precomputeTable, 'no precompute table passed')
-    assert(window.isSecureContext, 'WebGPU disabled for http:// protocol, works only on https://')
-    assert(navigator.gpu, 'Browser not support WebGPU')
-    const adapter = await navigator.gpu.requestAdapter()
-    const device = await adapter.requestDevice()
-    console.log('Device:', adapter.info.description || adapter.info.vendor)
     var closed = false
     device.lost.then(()=>{
-        if (!closed) throw Error("WebGPU logical device was lost.")
+        assert(closed, 'WebGPU logical device was lost.')
         console.log('Cleaned WebGPU device resources')
     })
 
@@ -110,13 +153,20 @@ async function webGPUinit({ precomputeTable }) {
     });
     device.queue.writeBuffer(secp256k1PrecomputeBuffer, 0, precomputeTable)
 
+    function clean() {
+        secp256k1PrecomputeBuffer.destroy()
+        buffers.inp.destroy()
+        buffers.out.destroy()
+        stagingBuffer.destroy()
+        closed = true
+        device.destroy()
+    }
+
     const inpBuffer = buffers.inp
 
     async function inference({ shaders, inp, count }) {
-        var start = performance.now()
         assert(inp?.length <= BUF_SIZE / 4, `expected input size to be <= ${BUF_SIZE / 4}, got ${inp?.length}`)
         device.queue.writeBuffer(inpBuffer, 0, inp)
-
         const commandEncoder = device.createCommandEncoder()
         const passEncoder = commandEncoder.beginComputePass()
 
@@ -129,22 +179,10 @@ async function webGPUinit({ precomputeTable }) {
         passEncoder.end()
         commandEncoder.copyBufferToBuffer(buffers.out, 0, stagingBuffer, 0, BUF_SIZE)
         device.queue.submit([commandEncoder.finish()])
-        console.log('inference.initCompute:', performance.now() - start | 0, 'ms'); start = performance.now()
         await stagingBuffer.mapAsync(GPUMapMode.READ, 0, BUF_SIZE)
-        console.log(`inference.waitGpu`,count,`entries:`, performance.now() - start | 0, 'ms');
-        console.log(`Speed:`, (count / (performance.now() - start) * 1000) | 0, 'mnemonics/s'); start = performance.now()
-        const copyArrayBuffer = stagingBuffer.getMappedRange(0, BUF_SIZE)
-        const data = new Uint32Array(copyArrayBuffer.slice(), 0, BUF_SIZE / 4)
+        const copyArrayBuffer = stagingBuffer.getMappedRange(0, count * 20)
+        const data = new Uint32Array(copyArrayBuffer.slice(), 0, count * 5)
         stagingBuffer.unmap()
-        console.log('inference.copy:', performance.now() - start | 0, 'ms'); start = performance.now()
-        window.cleangpu.onclick = () => {
-            secp256k1PrecomputeBuffer.destroy()
-            buffers.inp.destroy()
-            buffers.out.destroy()
-            stagingBuffer.destroy()
-            closed = true
-            device.destroy()
-        }
         return data
     }
 
@@ -156,17 +194,17 @@ async function webGPUinit({ precomputeTable }) {
                 {
                     binding: 0,
                     visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: "read-only-storage" }
+                    buffer: { type: 'read-only-storage' }
                 },
                 {
                     binding: 1,
                     visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: "storage" },
+                    buffer: { type: 'storage' },
                 },
                 {
                     binding: 2,
                     visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: "read-only-storage" },
+                    buffer: { type: 'read-only-storage' },
                 },
             ],
         });
@@ -203,6 +241,8 @@ async function webGPUinit({ precomputeTable }) {
     }
 
     return {
+        name: adapter.info.description || adapter.info.vendor,
+        clean,
         swapBuffers() {
             var inp = buffers.inp
             var out = buffers.out
@@ -218,7 +258,8 @@ async function webGPUinit({ precomputeTable }) {
 
 function assert(cond, text) {
     if (!cond) {
-        const err = new Error(text)
+        const err = new Error(text || 'unknown error')
+        window.output.innerHTML += `❌ ${text || 'unknown error'}\n`
         err.stack = err.stack.split('\n').filter(x => !x.includes('at assert')).join('\n')
         throw err
     }

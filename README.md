@@ -1,7 +1,9 @@
 # Bitcoin bip39 seed mnemonic recovery
 
+## [GPU Benchmark](https://georg95.github.io/bip39-brute/benchmark.html)
 
-## [App page](https://georg95.github.io/bip39-brute/index.html)
+## [App page (CPU)](https://georg95.github.io/bip39-brute/index.html)
+
 Test data, mnemonic:
 ```
 tenant grid summer affair garlic monitor off repeat tongue define,absent absent debris family only trouble rigid absent define,absent process * apology plate * slow
@@ -33,5 +35,5 @@ bc1q0esjzsh4et4wxrfumglc97fpksvmwp8dwuwdxx
   - [x] ripemd160
   - [x] Mnemonic to seed
   - [x] Derive path
+  - [x] Mnemonic to seeds batch
   - [ ] Mnemonic checksum
-  - [ ] Mnemonic to seeds batch
