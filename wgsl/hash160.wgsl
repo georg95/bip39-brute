@@ -188,7 +188,7 @@ fn ripemd160(inp: ptr<function, array<u32, 8>>) {
     inp[4] = h4;
 }
 
-@compute @workgroup_size(64)
+@compute @workgroup_size(WORKGROUP_SIZE)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var out: array<u32, 8>;
     sha256(&out, gid.x * 32u);

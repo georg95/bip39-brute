@@ -282,7 +282,7 @@ fn deriveSeed(keys: ptr<function, array<u32, 16>>, offset: u32) {
 
 @group(0) @binding(0) var<storage, read> input: array<u32>;
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;
-@compute @workgroup_size(64)
+@compute @workgroup_size(WORKGROUP_SIZE)
 fn derive1(@builtin(global_invocation_id) gid: vec3<u32>) {
   var keys: array<u32, 16>;
   deriveSeed(&keys, gid.x * 16u);
@@ -293,7 +293,7 @@ fn derive1(@builtin(global_invocation_id) gid: vec3<u32>) {
   for (var i: u32 = 0; i < 16; i++) { output[gid.x * 16u + i] = keys[i]; }
 }
 
-@compute @workgroup_size(64)
+@compute @workgroup_size(WORKGROUP_SIZE)
 fn derive2(@builtin(global_invocation_id) gid: vec3<u32>) {
   var keys: array<u32, 16>;
   var keysPub: array<u32, 16>;

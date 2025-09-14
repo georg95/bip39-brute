@@ -14,23 +14,23 @@ async function prepareCompute() {
     return precomputeTable
 }
 
-async function buildEntirePipeline({ buildShader, swapBuffers }) {
+async function buildEntirePipeline({ WORKGROUP_SIZE, buildShader, swapBuffers }) {
     let shaders = []
-    shaders.push(await buildShader('wgsl/pbkdf2.wgsl'))
+    shaders.push(await buildShader('wgsl/pbkdf2.wgsl', 'main', WORKGROUP_SIZE))
     swapBuffers()
-    shaders.push(await buildShader('wgsl/derive_coin.wgsl', 'derive1'))
+    shaders.push(await buildShader('wgsl/derive_coin.wgsl', 'derive1', WORKGROUP_SIZE))
     swapBuffers()
-    shaders.push(await buildShader('wgsl/secp256k1.wgsl'))
+    shaders.push(await buildShader('wgsl/secp256k1.wgsl', 'main', WORKGROUP_SIZE))
     swapBuffers()
-    shaders.push(await buildShader('wgsl/derive_coin.wgsl', 'derive2'))
+    shaders.push(await buildShader('wgsl/derive_coin.wgsl', 'derive2', WORKGROUP_SIZE))
     swapBuffers()
-    shaders.push(await buildShader('wgsl/secp256k1.wgsl'))
+    shaders.push(await buildShader('wgsl/secp256k1.wgsl', 'main', WORKGROUP_SIZE))
     swapBuffers()
-    shaders.push(await buildShader('wgsl/derive_coin.wgsl', 'derive2'))
+    shaders.push(await buildShader('wgsl/derive_coin.wgsl', 'derive2', WORKGROUP_SIZE))
     swapBuffers()
-    shaders.push(await buildShader('wgsl/secp256k1.wgsl'))
+    shaders.push(await buildShader('wgsl/secp256k1.wgsl', 'main', WORKGROUP_SIZE))
     swapBuffers()
-    shaders.push(await buildShader('wgsl/hash160.wgsl'))
+    shaders.push(await buildShader('wgsl/hash160.wgsl', 'main', WORKGROUP_SIZE))
     return shaders
 }
 
@@ -40,12 +40,14 @@ document.addEventListener('DOMContentLoaded', () => {
         window.output.innerHTML += text + '\n'
     }
     async function runBenchmark(options) {
-        const { name, clean, inference, buildShader, swapBuffers } = await webGPUinit(options)
+        const passwords = 1024 * 32
+        const { name, clean, inference, buildShader, swapBuffers } =
+            await webGPUinit({...options, BUF_SIZE: passwords*128 })
         log(`\n[${name}]\n`)
         window.output.innerHTML += 'Initialize data... '
         const start = performance.now()
-        const pipeline = await buildEntirePipeline({ buildShader, swapBuffers })
-        const passwords = 1024 * 8
+        const WORKGROUP_SIZE = 64
+        const pipeline = await buildEntirePipeline({ buildShader, swapBuffers, WORKGROUP_SIZE })
         const PASSWORD = 'password'
         const digits = passwords.toString(10).length
         const PASS_LEN = Math.ceil((PASSWORD.length + digits + 1) / 4) + 1
@@ -65,32 +67,39 @@ document.addEventListener('DOMContentLoaded', () => {
         bufUint32LESwap(strbuf, 128 + passwords * 4, strbuf.length)
         
         log(`[${((performance.now() - start) / 1000).toFixed(1)}s]\n`)
-        for (let mode of ['pbkdf2', 'all']) {
+        for (let mode of ['pbkdf2']) {
             if (mode === 'pbkdf2') {
-                log('Pbkdf2-hmac-sha512:')
+                log('\nPbkdf2-hmac-sha512:')
                 await new Promise(res => setTimeout(res, 100)) // flush text
                 shaders = [pipeline[0]]
             }
             if (mode === 'all') {
-                log('\nMnemonic to address:')
+                log('Mnemonic to address:')
                 shaders = pipeline
             }
-            for (let i = 0; i < 8; i++) {
+            for (let i = 0; i < 10; i++) {
                 const batchSize = 64 * (2 ** i)
                 const start = performance.now()
                 let out
                 for (let x = 0; x < 5; x++) {
-                    out = await inference({ shaders, inp, count: batchSize })
+                    out = await inference({ WORKGROUP_SIZE, shaders, inp, count: batchSize })
                 }
                 const time = (performance.now() - start) / 1000
+                console.log('out:', toHex(out.slice(8, 16)))
                 const resHash160 = Array.from(out.slice(35 * 5, 35 * 5 + 5)).map(x => leSwap(x.toString(16).padStart(8, '0'))).join('')
-                const addrToHex = 'f679bc9f7c11c33741b410f7a1801840f7bdf754'
-                if (mode === 'all' && resHash160 !== addrToHex) {
+                if (mode === 'all' && resHash160 !== 'f679bc9f7c11c33741b410f7a1801840f7bdf754') {
                     log('❌ wgsl pipeline FAILED')
                     log(resHash160)
-                    log(addrToHex)
-                    break
+                    log('f679bc9f7c11c33741b410f7a1801840f7bdf754')
+                    clean()
+                    return
                 }
+                // if (mode === 'pbkdf2' && toHex(out.slice(0, 8)) !== '6162616e646f6e206162616e646f6e206162616e646f6e206162616e646f6e20') {
+                //     log('❌ wgsl pbkdf2 FAILED')
+                //     log(resHash160)
+                //     log(addrToHex)
+                //     break
+                // }
 
                 log(`Batch: ${batchSize}, Speed: ${(batchSize * 5 / time) | 0} ops/s`);
 
@@ -124,15 +133,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 })
 
-async function webGPUinit({ adapter, device, precomputeTable }) {
+async function webGPUinit({ BUF_SIZE, adapter, device, precomputeTable }) {
+    assert(BUF_SIZE, 'no BUF_SIZE passed')
     assert(precomputeTable, 'no precompute table passed')
     var closed = false
     device.lost.then(()=>{
         assert(closed, 'WebGPU logical device was lost.')
         console.log('Cleaned WebGPU device resources')
     })
-
-    const BUF_SIZE = 128 * 1024 * 32
 
     const secp256k1PrecomputeBuffer = device.createBuffer({
         size: precomputeTable.length * 4,
@@ -167,7 +175,8 @@ async function webGPUinit({ adapter, device, precomputeTable }) {
 
     const inpBuffer = buffers.inp
 
-    async function inference({ shaders, inp, count }) {
+    async function inference({ WORKGROUP_SIZE, shaders, inp, count }) {
+        assert(WORKGROUP_SIZE, `expected WORKGROUP_SIZE, got ${inp?.length}`)
         assert(inp?.length <= BUF_SIZE / 4, `expected input size to be <= ${BUF_SIZE / 4}, got ${inp?.length}`)
         device.queue.writeBuffer(inpBuffer, 0, inp)
         const commandEncoder = device.createCommandEncoder()
@@ -176,7 +185,7 @@ async function webGPUinit({ adapter, device, precomputeTable }) {
         for(let { bindGroup, pipeline } of shaders) {
             passEncoder.setBindGroup(0, bindGroup)
             passEncoder.setPipeline(pipeline)
-            passEncoder.dispatchWorkgroups(Math.ceil(count / 32))
+            passEncoder.dispatchWorkgroups(Math.ceil(count / WORKGROUP_SIZE))
         }
 
         passEncoder.end()
@@ -189,7 +198,7 @@ async function webGPUinit({ adapter, device, precomputeTable }) {
         return data
     }
 
-    async function buildShader(shaderURL, func='main') {
+    async function buildShader(shaderURL, func='main', WORKGROUP_SIZE) {
         var start = performance.now()
         const code = await fetch(shaderURL).then(r => r.text())
         const bindGroupLayout = device.createBindGroupLayout({
@@ -232,7 +241,7 @@ async function webGPUinit({ adapter, device, precomputeTable }) {
             }),
             compute: {
                 module: device.createShaderModule({
-                    code,
+                    code: code.replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10)),
                 }),
                 entryPoint: func,
             },

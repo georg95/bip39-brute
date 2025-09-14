@@ -20,10 +20,7 @@ const K: array<u32,160> = array<u32,160>(
     0x28db77f5, 0x23047d84, 0x32caab7b, 0x40c72493, 0x3c9ebe0a, 0x15c9bebc, 0x431d67c4, 0x9c100d4c,
     0x4cc5d4be, 0xcb3e42b6, 0x597f299c, 0xfc657e2a, 0x5fcb6fab, 0x3ad6faec, 0x6c44198c, 0x4a475817);
 
-// out - array<u32> ptr
-fn sha512(inp: ptr<function, array<u32, 32>>, out: ptr<function, array<u32, 16>>, IV: ptr<function, array<u32, 16>>) {
-  var W: array<u32, 32>;
-  for (var i: u32 =  0u; i <  32u; i = i + 1u) { W[i] = inp[i]; }
+fn sha512(W: ptr<function, array<u32, 32>>, IV: ptr<function, array<u32, 16>>) {
   var ahi: u32 = IV[0];
   var alo: u32 = IV[1];
   var bhi: u32 = IV[2];
@@ -141,22 +138,22 @@ fn sha512(inp: ptr<function, array<u32, 32>>, out: ptr<function, array<u32, 16>>
   hlo += IV[15];
   hhi += IV[14] + select(0u, 1u, hlo < IV[15]);
 
-  out[0] = ahi;
-  out[1] = alo;
-  out[2] = bhi;
-  out[3] = blo;
-  out[4] = chi;
-  out[5] = clo;
-  out[6] = dhi;
-  out[7] = dlo;
-  out[8] = ehi;
-  out[9] = elo;
-  out[10] = fhi;
-  out[11] = flo;
-  out[12] = ghi;
-  out[13] = glo;
-  out[14] = hhi;
-  out[15] = hlo;
+  W[0] = ahi;
+  W[1] = alo;
+  W[2] = bhi;
+  W[3] = blo;
+  W[4] = chi;
+  W[5] = clo;
+  W[6] = dhi;
+  W[7] = dlo;
+  W[8] = ehi;
+  W[9] = elo;
+  W[10] = fhi;
+  W[11] = flo;
+  W[12] = ghi;
+  W[13] = glo;
+  W[14] = hhi;
+  W[15] = hlo;
 }
 
 @group(0) @binding(0) var<storage, read> input: array<u32>;
@@ -171,57 +168,73 @@ fn setByteArr(arr: ptr<function, array<u32, 32>>, idx: u32, byte: u32) {
 
 const MAX_PASSWORD_LEN: u32 = 128 - 9; // 0x00000001 (4 bytes) 0x80 (1 byte) %%seed bits%% (4 bytes)
 
-@compute @workgroup_size(32)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+
+fn initSeeds(tmp_buf: ptr<function, array<u32, 32>>, seed1: ptr<function, array<u32, 16>>, seed2: ptr<function, array<u32, 16>>) {
   var IV = array<u32,16>(
       0x6a09e667, 0xf3bcc908, 0xbb67ae85, 0x84caa73b,
       0x3c6ef372, 0xfe94f82b, 0xa54ff53a, 0x5f1d36f1,
       0x510e527f, 0xade682d1, 0x9b05688c, 0x2b3e6c1f,
       0x1f83d9ab, 0xfb41bd6b, 0x5be0cd19, 0x137e2179,
   );
-  var tmp_buf: array<u32, 32>;
-  var seed1: array<u32, 16>;
-  var seed2: array<u32, 16>;
-  var new_block: array<u32, 16>;
-  var dk: array<u32, 16>;
-
   for (var i: u32 = 0u; i < 32u; i += 1u) { tmp_buf[i] = input[i] ^ 0x36363636; }
-  sha512(&tmp_buf, &seed1, &IV);
+  sha512(tmp_buf, &IV);
+  for (var i: u32 = 0u; i < 16u; i += 1u) { seed1[i] = tmp_buf[i]; }
   for (var i: u32 = 0u; i < 32u; i += 1u) { tmp_buf[i] = input[i] ^ 0x5c5c5c5c; }
-  sha512(&tmp_buf, &seed2, &IV);
+  sha512(tmp_buf, &IV);
+  for (var i: u32 = 0u; i < 16u; i += 1u) { seed2[i] = tmp_buf[i]; }
+}
+
+fn initBuffer(tmp_buf: ptr<function, array<u32, 32>>, seed1: ptr<function, array<u32, 16>>, seed2: ptr<function, array<u32, 16>>, gidX: u32) {
   for (var i = 0; i < 32; i += 1) { tmp_buf[i] = 0; }
   tmp_buf[0] = 0x6d6e656d; // mnem
   tmp_buf[1] = 0x6f6e6963; // onic
-  var passOffset: u32 = input[gid.x + 32u];
+  var passOffset: u32 = input[gidX + 32u];
 
   var passLen: u32 = 0;
   for (; passLen < MAX_PASSWORD_LEN; passLen++) {
     var offset = passOffset + passLen;
     var b = (input[offset / 4] >> (24 - (offset % 4) * 8)) & 0xff;
     if (b == 0) { break; }
-    setByteArr(&tmp_buf, 8u + passLen, b);
+    setByteArr(tmp_buf, 8u + passLen, b);
   }
-  setByteArr(&tmp_buf, passLen + 8, 0x00);
-  setByteArr(&tmp_buf, passLen + 9, 0x00);
-  setByteArr(&tmp_buf, passLen + 10, 0x00);
-  setByteArr(&tmp_buf, passLen + 11, 0x01);
-  setByteArr(&tmp_buf, passLen + 12, 0x80);
+  setByteArr(tmp_buf, passLen + 8, 0x00);
+  setByteArr(tmp_buf, passLen + 9, 0x00);
+  setByteArr(tmp_buf, passLen + 10, 0x00);
+  setByteArr(tmp_buf, passLen + 11, 0x01);
+  setByteArr(tmp_buf, passLen + 12, 0x80);
   tmp_buf[31] = (passLen + 140) * 8;
-  sha512(&tmp_buf, &new_block, &seed1);
+  sha512(tmp_buf, seed1);
 
-  for (var i = 0; i < 16; i += 1) { tmp_buf[i] = new_block[i]; }
   for (var i = 16; i < 32; i += 1) { tmp_buf[i] = 0; }
   tmp_buf[16] = 0x80000000;
   tmp_buf[31] = 192 * 8;
-  sha512(&tmp_buf, &dk, &seed2);
-  for (var i = 0; i < 32; i += 1) { new_block[i] = dk[i]; }
+  sha512(tmp_buf, seed2);
+}
+
+@compute @workgroup_size(WORKGROUP_SIZE)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  var tmp_buf: array<u32, 32>;
+  var seed1: array<u32, 16>;
+  var seed2: array<u32, 16>;
+  var dk: array<u32, 16>;
+  initSeeds(&tmp_buf, &seed1, &seed2);
+  initBuffer(&tmp_buf, &seed1, &seed2, gid.x);
+
+  for (var i = 0; i < 16; i += 1) { dk[i] = tmp_buf[i]; }
 
   for (var i = 1; i < 2048; i += 1) {
-      for (var i = 0; i < 16; i += 1) { tmp_buf[i] = new_block[i]; }
-      sha512(&tmp_buf, &new_block, &seed1);
-      for (var i = 0; i < 16; i += 1) { tmp_buf[i] = new_block[i]; }
-      sha512(&tmp_buf, &new_block, &seed2);
-      for (var i = 0; i < 16; i += 1) { dk[i] ^= new_block[i]; }
+
+      tmp_buf[16] = 0x80000000;
+      for (var i = 17; i < 31; i += 1) { tmp_buf[i] = 0; }
+      tmp_buf[31] = 192 * 8;
+      sha512(&tmp_buf, &seed1);
+
+      tmp_buf[16] = 0x80000000;
+      for (var i = 17; i < 31; i += 1) { tmp_buf[i] = 0; }
+      tmp_buf[31] = 192 * 8;
+      sha512(&tmp_buf, &seed2);
+
+      for (var i = 0; i < 16; i += 1) { dk[i] ^= tmp_buf[i]; }
   }
 
   for (var i: u32 = 0; i < 16; i += 1) {
