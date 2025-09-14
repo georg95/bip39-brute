@@ -34,15 +34,21 @@ async function prepareCompute() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-    const inference = await prepareCompute()
+    window.initb.onclick = async () => {
+        console.log('Init...')
+        inference = await prepareCompute()
+        console.log('Init OK')
+    }
+    let inference = null
     window.benchmark.onclick = async () => {
+        assert(inference, 'initialize compute first')
         console.log('Test pipelie...')
-        const inp = new Uint32Array(128 * 1024 * 8).fill(0)
+        const passwords = 1024 * 8
+        const inp = new Uint32Array(128 * passwords).fill(0)
         var strbuf = new Uint8Array(inp.buffer, inp.byteOffset, inp.byteLength)
         const MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
         strbuf.set(new TextEncoder().encode(MNEMONIC))
 
-        const passwords = 1024 * 8
         const PASSWORD = 'password'
         let passwordOffset = 128 + passwords * 4
         for (let i = 0; i < passwords; i++) {
@@ -73,6 +79,7 @@ async function webGPUinit({ precomputeTable }) {
     assert(navigator.gpu, 'Browser not support WebGPU')
     const adapter = await navigator.gpu.requestAdapter()
     const device = await adapter.requestDevice()
+    console.log('Device:', adapter.info.description || adapter.info.vendor)
     var closed = false
     device.lost.then(()=>{
         if (!closed) throw Error("WebGPU logical device was lost.")
@@ -101,6 +108,7 @@ async function webGPUinit({ precomputeTable }) {
         size: BUF_SIZE,
         usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
     });
+    device.queue.writeBuffer(secp256k1PrecomputeBuffer, 0, precomputeTable)
 
     const inpBuffer = buffers.inp
 
@@ -108,7 +116,6 @@ async function webGPUinit({ precomputeTable }) {
         var start = performance.now()
         assert(inp?.length <= BUF_SIZE / 4, `expected input size to be <= ${BUF_SIZE / 4}, got ${inp?.length}`)
         device.queue.writeBuffer(inpBuffer, 0, inp)
-        device.queue.writeBuffer(secp256k1PrecomputeBuffer, 0, precomputeTable)
 
         const commandEncoder = device.createCommandEncoder()
         const passEncoder = commandEncoder.beginComputePass()
@@ -116,7 +123,7 @@ async function webGPUinit({ precomputeTable }) {
         for(let { bindGroup, pipeline } of shaders) {
             passEncoder.setBindGroup(0, bindGroup)
             passEncoder.setPipeline(pipeline)
-            passEncoder.dispatchWorkgroups(Math.ceil(count / 64))
+            passEncoder.dispatchWorkgroups(Math.ceil(count / 32))
         }
 
         passEncoder.end()
