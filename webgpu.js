@@ -68,6 +68,7 @@ document.addEventListener('DOMContentLoaded', () => {
         for (let mode of ['pbkdf2', 'all']) {
             if (mode === 'pbkdf2') {
                 log('Pbkdf2-hmac-sha512:')
+                await new Promise(res => setTimeout(res, 100)) // flush text
                 shaders = [pipeline[0]]
             }
             if (mode === 'all') {
