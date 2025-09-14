@@ -46,12 +46,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const start = performance.now()
         const pipeline = await buildEntirePipeline({ buildShader, swapBuffers })
         const passwords = 1024 * 8
-        const inp = new Uint32Array(128 * passwords).fill(0)
+        const PASSWORD = 'password'
+        const digits = passwords.toString(10).length
+        const PASS_LEN = Math.ceil((PASSWORD.length + digits + 1) / 4) + 1
+        const inp = new Uint32Array(32 + PASS_LEN * passwords).fill(0)
         var strbuf = new Uint8Array(inp.buffer, inp.byteOffset, inp.byteLength)
         const MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
         strbuf.set(new TextEncoder().encode(MNEMONIC))
 
-        const PASSWORD = 'password'
         let passwordOffset = 128 + passwords * 4
         for (let i = 0; i < passwords; i++) {
             const curPass = PASSWORD + i.toString(10)
