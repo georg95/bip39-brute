@@ -23,20 +23,22 @@ async function buildEntirePipeline({ WORKGROUP_SIZE, buildShader, swapBuffers, h
         .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
         .replaceAll('CHECK_COUNT', hashList.length.toString(10))
         .replaceAll('CHECK_HASHES', hash160ToWGSLArray(hashList))
-        
+    
     shaders.push(await buildShader(pbkdf2Code, 'main'))
     swapBuffers()
     shaders.push(await buildShader(deriveCode, 'derive1'))
     swapBuffers()
-    shaders.push(await buildShader(secp256k1Code, 'main', WORKGROUP_SIZE))
+    const secp256k1Shader = await buildShader(secp256k1Code, 'main')
+    shaders.push(secp256k1Shader)
     swapBuffers()
-    shaders.push(await buildShader(deriveCode, 'derive2', WORKGROUP_SIZE))
+    const derive2Shader = await buildShader(deriveCode, 'derive2', WORKGROUP_SIZE)
+    shaders.push(derive2Shader)
     swapBuffers()
-    shaders.push(await buildShader(secp256k1Code, 'main', WORKGROUP_SIZE))
+    shaders.push(secp256k1Shader)
     swapBuffers()
-    shaders.push(await buildShader(deriveCode, 'derive2', WORKGROUP_SIZE))
+    shaders.push(derive2Shader)
     swapBuffers()
-    shaders.push(await buildShader(secp256k1Code, 'main', WORKGROUP_SIZE))
+    shaders.push(secp256k1Shader)
     swapBuffers()
     shaders.push(await buildShader(hash160Code, 'main', WORKGROUP_SIZE))
     return shaders
@@ -85,7 +87,7 @@ async function webGPUinit({ BUF_SIZE, adapter, device, precomputeTable }) {
     }
 
     const stagingBuffer = device.createBuffer({
-        size: BUF_SIZE,
+        size: 1024,
         usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
     });
     device.queue.writeBuffer(secp256k1PrecomputeBuffer, 0, precomputeTable)
@@ -100,6 +102,7 @@ async function webGPUinit({ BUF_SIZE, adapter, device, precomputeTable }) {
     }
 
     const inpBuffer = buffers.inp
+    let outBuffer = buffers.out
 
     async function inference({ WORKGROUP_SIZE, shaders, inp, count }) {
         assert(WORKGROUP_SIZE, `expected WORKGROUP_SIZE, got ${inp?.length}`)
@@ -107,83 +110,104 @@ async function webGPUinit({ BUF_SIZE, adapter, device, precomputeTable }) {
         device.queue.writeBuffer(inpBuffer, 0, inp)
         const commandEncoder = device.createCommandEncoder()
         const passEncoder = commandEncoder.beginComputePass()
-
         for(let { bindGroup, pipeline } of shaders) {
             passEncoder.setBindGroup(0, bindGroup)
             passEncoder.setPipeline(pipeline)
             passEncoder.dispatchWorkgroups(Math.ceil(count / WORKGROUP_SIZE))
         }
-
         passEncoder.end()
-        commandEncoder.copyBufferToBuffer(buffers.out, 0, stagingBuffer, 0, BUF_SIZE)
+        commandEncoder.copyBufferToBuffer(outBuffer, 0, stagingBuffer, 0, 1024)
         device.queue.submit([commandEncoder.finish()])
-        await stagingBuffer.mapAsync(GPUMapMode.READ, 0, BUF_SIZE)
-        const copyArrayBuffer = stagingBuffer.getMappedRange(0, count * 20)
-        const data = new Uint32Array(copyArrayBuffer.slice(), 0, count * 5)
+        await stagingBuffer.mapAsync(GPUMapMode.READ, 0, 1024)
+        const copyArrayBuffer = stagingBuffer.getMappedRange(0, 1024)
+        const result = new Uint32Array(copyArrayBuffer.slice(), 0, 256)
         stagingBuffer.unmap()
-        return data
+        return result
     }
 
-    async function buildShader(code, func) {
-        const bindGroupLayout = device.createBindGroupLayout({
-            entries: [
-                {
-                    binding: 0,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: 'read-only-storage' }
-                },
-                {
-                    binding: 1,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: 'storage' },
-                },
-                {
-                    binding: 2,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: 'read-only-storage' },
-                },
-            ],
-        });
-        const inpBuf = buffers.inp
-        const outBuf = buffers.out
-        const bindGroup = device.createBindGroup({
-            layout: bindGroupLayout,
-            entries: [{
+    const bindGroupLayout = device.createBindGroupLayout({
+        entries: [
+            {
                 binding: 0,
-                resource: { buffer: inpBuf },
-            }, {
-                binding: 1,
-                resource: { buffer: outBuf },
-            }, {
-                binding: 2,
-                resource: { buffer: secp256k1PrecomputeBuffer },
-            }],
-        })
-        const pipeline = device.createComputePipeline({
-            layout: device.createPipelineLayout({
-                bindGroupLayouts: [bindGroupLayout],
-            }),
-            compute: {
-                module: device.createShaderModule({
-                    code,
-                }),
-                entryPoint: func,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: { type: 'read-only-storage' }
             },
+            {
+                binding: 1,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: { type: 'storage' },
+            },
+            {
+                binding: 2,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: { type: 'read-only-storage' },
+            },
+        ],
+    });
+    const bindGroup1 = device.createBindGroup({
+        layout: bindGroupLayout,
+        entries: [{
+            binding: 0,
+            resource: { buffer: buffers.inp },
+        }, {
+            binding: 1,
+            resource: { buffer: buffers.out },
+        }, {
+            binding: 2,
+            resource: { buffer: secp256k1PrecomputeBuffer },
+        }],
+    })
+
+    const bindGroup2 = device.createBindGroup({
+        layout: bindGroupLayout,
+        entries: [{
+            binding: 0,
+            resource: { buffer: buffers.out },
+        }, {
+            binding: 1,
+            resource: { buffer: buffers.inp },
+        }, {
+            binding: 2,
+            resource: { buffer: secp256k1PrecomputeBuffer },
+        }],
+    })
+
+    let bindGroup = bindGroup1
+
+    async function buildShader(code, entryPoint) {
+      const module = device.createShaderModule({ code })
+      const shaderInfo = await module.getCompilationInfo()
+      if (shaderInfo.messages?.length > 0) {
+        console.error(shaderInfo.messages)
+        log('Some error ocurred during shader compiling')
+      }
+  
+      let pipeline
+      try {
+        pipeline = await device.createComputePipelineAsync({
+          layout: device.createPipelineLayout({
+            bindGroupLayouts: [bindGroupLayout],
+          }),
+          compute: { module, entryPoint},
         });
-        return {
-            bindGroup,
-            pipeline,
-        }
+      } catch (e) {
+        console.error(e)
+        log(`Pipeline creation error: ${e.message}`)
+      }
+      return { bindGroup, pipeline }
     }
 
     return {
         name: adapter.info.description || adapter.info.vendor,
         clean,
         swapBuffers() {
-            var inp = buffers.inp
-            var out = buffers.out
-            buffers.inp = out
-            buffers.out = inp
+            if (bindGroup === bindGroup1) {
+              bindGroup = bindGroup2
+              outBuffer = buffers.inp
+            } else {
+              bindGroup = bindGroup1
+              outBuffer = buffers.out
+            }
         },
         inference,
         buildShader,
