@@ -3,7 +3,7 @@ const biplist = fetch('bip39.txt').then(r => r.text()).then(t => t.split('\n').m
 let THREADS = 1
 let DERIVE_ADDRESSES = 5
 document.addEventListener('DOMContentLoaded', () => {
-  window.brute.onclick = startBrute
+  window.brute.onclick = brutePasswordGPU
   window['show-settings'].onclick = () => {
     window['brute-pane'].style.display = 'none'
     window['settings-pane'].style.display = 'block'
@@ -37,7 +37,54 @@ document.addEventListener('DOMContentLoaded', () => {
   checkInput()
 })
 
-async function startBrute() {
+async function brutePasswordGPU() {
+    const batchSize = 1024 * 4
+    const WORKGROUP_SIZE = 64
+    const { name, clean, inference, buildShader, swapBuffers } =
+            await webGPUinit({ BUF_SIZE: batchSize*128, precomputeTable: await prepareCompute() })
+    const nextBatch = await getPasswords('/bruteforce-database/usernames.txt')
+    const { bip39mask, addrHash160list, addrTypes } = await validateInput()
+    // TODO support other address types
+    const MNEMONIC = new TextEncoder().encode(bip39mask)
+
+    const pipeline = await buildEntirePipeline({
+        WORKGROUP_SIZE, buildShader, swapBuffers, hashList: addrHash160list
+    })
+    log(`[${name}]\nBruteforce init...`, true)
+    while (true) {
+        const inp = await nextBatch(batchSize)
+        if (!inp) {
+          log(`Password not found :(`, true)
+          break
+        }
+        var strbuf = new Uint8Array(inp.passwords, 0, 128)
+        if (MNEMONIC.length <= 128) {
+          strbuf.set(MNEMONIC)
+        } else {
+          // HMAC key compression
+          strbuf.set(new Uint8Array(await crypto.subtle.digest('SHA-512', MNEMONIC)))
+        }
+        bufUint32LESwap(strbuf, 0, 128)
+        
+        const start = performance.now()
+        out = await inference({ WORKGROUP_SIZE, shaders: pipeline, inp: new Uint32Array(inp.passwords), count: batchSize })
+        const time = (performance.now() - start) / 1000
+        const speed = batchSize / time | 0
+        log(`[${name}]\nBruteforce ${(inp.progress * 100).toFixed(1).padStart(4, '')}% ${speed} passwords/s`, true)
+        if (out[0] !== 0xffffffff) {
+            const passBuf = new Uint8Array(inp.passwords)
+            const passBufIndex = new Uint32Array(inp.passwords, 128)
+            const index = passBufIndex[out[0]]
+            const index2 = passBufIndex[out[0] + 1]
+            log(`FOUND :)\nPassword: ${new TextDecoder().decode(passBuf.slice(index, index2 - 1))}`, true)
+            break
+        }
+    }
+
+    clean()
+}
+
+async function brutePasswordCPU() {
   const start = performance.now()
   const { bip39mask, addrHash160list, addrTypes } = await validateInput()
   const allWords = await biplist
@@ -151,11 +198,6 @@ async function validateInput() {
         result = false
       }
     }
-
-  }
-  if (asterisks == 0) {
-    window.output.innerHTML += `Enter at least 1 asterisk\n`
-    result = false
   }
   if (asterisks > 2) {
     window.output.innerHTML += `Can't brute with ${asterisks} * - too long to brute\n`

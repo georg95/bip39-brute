@@ -14,16 +14,15 @@ async function prepareCompute() {
     return precomputeTable
 }
 
-async function buildEntirePipeline({ WORKGROUP_SIZE, buildShader, swapBuffers, addressList }) {
-    assert(addressList.length === 1, 'TODO support for multiple address')
+async function buildEntirePipeline({ WORKGROUP_SIZE, buildShader, swapBuffers, hashList }) {
     let shaders = []
     let pbkdf2Code = (await fetch('wgsl/pbkdf2.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
     let deriveCode = (await fetch('wgsl/derive_coin.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
     let secp256k1Code = (await fetch('wgsl/secp256k1.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
     let hash160Code = (await fetch('wgsl/hash160.wgsl').then(r => r.text()))
         .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
-        .replaceAll('CHECK_COUNT', addressList.length.toString(10))
-        .replaceAll('CHECK_HASHES', await addrToWGSLScriptHash(addressList[0]))
+        .replaceAll('CHECK_COUNT', hashList.length.toString(10))
+        .replaceAll('CHECK_HASHES', hash160ToWGSLArray(hashList))
         
     shaders.push(await buildShader(pbkdf2Code, 'main'))
     swapBuffers()
@@ -43,47 +42,17 @@ async function buildEntirePipeline({ WORKGROUP_SIZE, buildShader, swapBuffers, a
     return shaders
 }
 
-async function addrToWGSLScriptHash(addr) {
-    const { hash160, type } = await addrToScriptHash(addr)
-    function valueLE(x) {
+function hash160ToWGSLArray(hash160List) {
+    function valueLE(hash160, x) {
         return '0x'+(((hash160[x*4 + 3] << 24) |
             (hash160[x*4 + 2] << 16) |
             (hash160[x*4 + 1] << 8) | 
             hash160[x*4]) >>> 0).toString(16)+'u'
     }
-    return `array<u32, 5>(${valueLE(0)}, ${valueLE(1)}, ${valueLE(2)}, ${valueLE(3)}, ${valueLE(4)})`
+    return hash160List.map(hash160 => 
+      `array<u32, 5>(${valueLE(hash160, 0)}, ${valueLE(hash160, 1)}, ${valueLE(hash160, 2)}, ${valueLE(hash160, 3)}, ${valueLE(hash160, 4)})`
+    ).join(',\n')
 }
-
-async function brutePassword() {
-    const batchSize = 1024 * 4
-    const WORKGROUP_SIZE = 64
-    const { name, clean, inference, buildShader, swapBuffers } =
-            await webGPUinit({ BUF_SIZE: batchSize*128, precomputeTable: await prepareCompute() })
-    const nextBatch = await getPasswords('/bruteforce-database/usernames.txt')
-    const pipeline = await buildEntirePipeline({
-        WORKGROUP_SIZE, buildShader, swapBuffers, addressList: ['1H9nFVdCB8idnntsDihrSFi4KYsT2QCT5A']
-    })
-    while (true) {
-        const inp = await nextBatch(batchSize)
-        if (!inp) break
-        var strbuf = new Uint8Array(inp.passwords, 0, 128)
-        const MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
-        strbuf.set(new TextEncoder().encode(MNEMONIC))
-        bufUint32LESwap(strbuf, 0, 128)
-        
-        out = await inference({ WORKGROUP_SIZE, shaders: pipeline, inp: new Uint32Array(inp.passwords), count: batchSize })
-        if (out[0] !== 0xffffffff) {
-            const passBuf = new Uint8Array(inp.passwords)
-            const passBufIndex = new Uint32Array(inp.passwords, 128)
-            const index = passBufIndex[out[0]]
-            const index2 = passBufIndex[out[0] + 1]
-            console.log('FOUND password!', new TextDecoder().decode(passBuf.slice(index, index2 - 1)))
-        }
-    }
-
-    clean()
-}
-setTimeout(brutePassword)
 
 async function webGPUinit({ BUF_SIZE, adapter, device, precomputeTable }) {
     assert(navigator.gpu, 'Browser not support WebGPU')

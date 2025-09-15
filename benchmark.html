@@ -4,10 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mnemonic bruteforce benchmark</title>
-  <script src="index.js"></script>
   <script src="webgpu.js"></script>
   <script src="secp256k1.js"></script>
-  <script src="tests.js"></script>
 </head>
     <style>
         html, body {
@@ -78,7 +76,7 @@ async function runBenchmark(options) {
     const start = performance.now()
     const WORKGROUP_SIZE = 64
     const pipeline = await buildEntirePipeline({
-        buildShader, swapBuffers, WORKGROUP_SIZE, addressList: ['1H9nFVdCB8idnntsDihrSFi4KYsT2QCT5A'],
+        buildShader, swapBuffers, WORKGROUP_SIZE, hashList: [new Uint8Array([177, 43, 28, 233, 149, 227, 53, 96, 61, 16, 252, 249, 145, 96, 18, 221, 76, 56, 191, 22])],
     })
     const PASSWORD = 'Abbie'
     const digits = passwords.toString(10).length
