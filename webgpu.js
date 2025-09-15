@@ -16,126 +16,62 @@ async function prepareCompute() {
 
 async function buildEntirePipeline({ WORKGROUP_SIZE, buildShader, swapBuffers }) {
     let shaders = []
-    shaders.push(await buildShader('wgsl/pbkdf2.wgsl', 'main', WORKGROUP_SIZE))
+    let pbkdf2Code = (await fetch('wgsl/pbkdf2.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
+    let deriveCode = (await fetch('wgsl/derive_coin.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
+    let secp256k1Code = (await fetch('wgsl/secp256k1.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
+    let hash160Code = (await fetch('wgsl/hash160.wgsl').then(r => r.text()))
+        .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
+        .replaceAll('CHECK_COUNT', '1')
+        .replaceAll('CHECK_HASHES', 'array<u32, 5>(0x9fbc79f6u, 0x37c3117cu, 0xf710b441u, 0x401880a1u, 0x54f7bdf7u)')
+        
+    shaders.push(await buildShader(pbkdf2Code, 'main'))
     swapBuffers()
-    shaders.push(await buildShader('wgsl/derive_coin.wgsl', 'derive1', WORKGROUP_SIZE))
+    shaders.push(await buildShader(deriveCode, 'derive1'))
     swapBuffers()
-    shaders.push(await buildShader('wgsl/secp256k1.wgsl', 'main', WORKGROUP_SIZE))
+    shaders.push(await buildShader(secp256k1Code, 'main', WORKGROUP_SIZE))
     swapBuffers()
-    shaders.push(await buildShader('wgsl/derive_coin.wgsl', 'derive2', WORKGROUP_SIZE))
+    shaders.push(await buildShader(deriveCode, 'derive2', WORKGROUP_SIZE))
     swapBuffers()
-    shaders.push(await buildShader('wgsl/secp256k1.wgsl', 'main', WORKGROUP_SIZE))
+    shaders.push(await buildShader(secp256k1Code, 'main', WORKGROUP_SIZE))
     swapBuffers()
-    shaders.push(await buildShader('wgsl/derive_coin.wgsl', 'derive2', WORKGROUP_SIZE))
+    shaders.push(await buildShader(deriveCode, 'derive2', WORKGROUP_SIZE))
     swapBuffers()
-    shaders.push(await buildShader('wgsl/secp256k1.wgsl', 'main', WORKGROUP_SIZE))
+    shaders.push(await buildShader(secp256k1Code, 'main', WORKGROUP_SIZE))
     swapBuffers()
-    shaders.push(await buildShader('wgsl/hash160.wgsl', 'main', WORKGROUP_SIZE))
+    shaders.push(await buildShader(hash160Code, 'main', WORKGROUP_SIZE))
     return shaders
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    function log(text, clear=false) {
-        if (clear) window.output.innerHTML = ''
-        window.output.innerHTML += text + '\n'
+async function brutePassword() {
+    const batchSize = 1024 * 4
+    const WORKGROUP_SIZE = 64
+    // const { name, clean, inference, buildShader, swapBuffers } =
+    //         await webGPUinit({...options, BUF_SIZE: batchSize*128 })
+    const nextBatch = await getPasswords('/bruteforce-database/usernames.txt')
+    // const pipeline = await buildEntirePipeline({ WORKGROUP_SIZE, buildShader, swapBuffers })
+
+    while (true) {
+        const inp = await nextBatch(batchSize)
+        console.log(inp)
+        if (!inp) break
+        // out = await inference({ WORKGROUP_SIZE, shagetPasswordsders: pipeline, inp, count: batchSize })
+        // if (out[0] !== 0xffffffff) {
+        //     log()
+        // }
     }
-    async function runBenchmark(options) {
-        const passwords = 1024 * 32
-        const { name, clean, inference, buildShader, swapBuffers } =
-            await webGPUinit({...options, BUF_SIZE: passwords*128 })
-        log(`\n[${name}]\n`)
-        window.output.innerHTML += 'Initialize data... '
-        const start = performance.now()
-        const WORKGROUP_SIZE = 64
-        const pipeline = await buildEntirePipeline({ buildShader, swapBuffers, WORKGROUP_SIZE })
-        const PASSWORD = 'password'
-        const digits = passwords.toString(10).length
-        const PASS_LEN = Math.ceil((PASSWORD.length + digits + 1) / 4) + 1
-        const inp = new Uint32Array(32 + PASS_LEN * passwords).fill(0)
-        var strbuf = new Uint8Array(inp.buffer, inp.byteOffset, inp.byteLength)
-        const MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
-        strbuf.set(new TextEncoder().encode(MNEMONIC))
 
-        let passwordOffset = 128 + passwords * 4
-        for (let i = 0; i < passwords; i++) {
-            const curPass = PASSWORD + i.toString(10)
-            strbuf.set(new TextEncoder().encode(curPass), passwordOffset)
-            inp[32 + i] = passwordOffset
-            passwordOffset += curPass.length + 1
-        }
-        bufUint32LESwap(strbuf, 0, 128)
-        bufUint32LESwap(strbuf, 128 + passwords * 4, strbuf.length)
-        
-        log(`[${((performance.now() - start) / 1000).toFixed(1)}s]\n`)
-        for (let mode of ['pbkdf2']) {
-            if (mode === 'pbkdf2') {
-                log('\nPbkdf2-hmac-sha512:')
-                await new Promise(res => setTimeout(res, 100)) // flush text
-                shaders = [pipeline[0]]
-            }
-            if (mode === 'all') {
-                log('Mnemonic to address:')
-                shaders = pipeline
-            }
-            for (let i = 0; i < 10; i++) {
-                const batchSize = 64 * (2 ** i)
-                const start = performance.now()
-                let out
-                for (let x = 0; x < 5; x++) {
-                    out = await inference({ WORKGROUP_SIZE, shaders, inp, count: batchSize })
-                }
-                const time = (performance.now() - start) / 1000
-                console.log('out:', toHex(out.slice(8, 16)))
-                const resHash160 = Array.from(out.slice(35 * 5, 35 * 5 + 5)).map(x => leSwap(x.toString(16).padStart(8, '0'))).join('')
-                if (mode === 'all' && resHash160 !== 'f679bc9f7c11c33741b410f7a1801840f7bdf754') {
-                    log('❌ wgsl pipeline FAILED')
-                    log(resHash160)
-                    log('f679bc9f7c11c33741b410f7a1801840f7bdf754')
-                    clean()
-                    return
-                }
-                // if (mode === 'pbkdf2' && toHex(out.slice(0, 8)) !== '6162616e646f6e206162616e646f6e206162616e646f6e206162616e646f6e20') {
-                //     log('❌ wgsl pbkdf2 FAILED')
-                //     log(resHash160)
-                //     log(addrToHex)
-                //     break
-                // }
-
-                log(`Batch: ${batchSize}, Speed: ${(batchSize * 5 / time) | 0} ops/s`);
-
-                if (time > 3) {
-                    break
-                }
-            }
-        }
-        clean()
-    }
-    window.benchmark.onclick = async () => {
-        assert(window.isSecureContext, 'WebGPU disabled for http:// protocol, works only on https://')
-        assert(navigator.gpu, 'Browser not support WebGPU')
-        window.benchmark.style.display = 'none'
-        window.output.innerHTML += 'Precompute secp256k1 table... '
-        const start = performance.now()
-        const precomputeTable = await prepareCompute()
-        log(`[${((performance.now() - start) / 1000).toFixed(1)}s]`)
-        const adapter1 = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" })
-        const device1 = await adapter1.requestDevice()
-        await runBenchmark({ precomputeTable, device: device1, adapter: adapter1 })
-
-        const adapter2 = await navigator.gpu.requestAdapter({ powerPreference: "low-power" })
-        const device2 = await adapter2.requestDevice()
-        if (adapter1.info.device !== adapter2.info.device || adapter1.info.description !== adapter2.info.description) {
-            window.output.innerHTML += '\n'
-            await runBenchmark({ precomputeTable, device: device2, adapter: adapter2 })
-        }
-        log('\n✅ DONE')
-        window.benchmark.style.display = ''
-    }
-})
+    // clean()
+}
+brutePassword()
 
 async function webGPUinit({ BUF_SIZE, adapter, device, precomputeTable }) {
+    assert(navigator.gpu, 'Browser not support WebGPU')
     assert(BUF_SIZE, 'no BUF_SIZE passed')
     assert(precomputeTable, 'no precompute table passed')
+    if (!adapter && !device) {
+        adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })
+        device = await adapter.requestDevice() 
+    }
     var closed = false
     device.lost.then(()=>{
         assert(closed, 'WebGPU logical device was lost.')
@@ -198,9 +134,7 @@ async function webGPUinit({ BUF_SIZE, adapter, device, precomputeTable }) {
         return data
     }
 
-    async function buildShader(shaderURL, func='main', WORKGROUP_SIZE) {
-        var start = performance.now()
-        const code = await fetch(shaderURL).then(r => r.text())
+    async function buildShader(code, func) {
         const bindGroupLayout = device.createBindGroupLayout({
             entries: [
                 {
@@ -241,7 +175,7 @@ async function webGPUinit({ BUF_SIZE, adapter, device, precomputeTable }) {
             }),
             compute: {
                 module: device.createShaderModule({
-                    code: code.replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10)),
+                    code,
                 }),
                 entryPoint: func,
             },
@@ -267,6 +201,91 @@ async function webGPUinit({ BUF_SIZE, adapter, device, precomputeTable }) {
 }
 
 // ====================================== helper methods
+
+
+async function getPasswords(url) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+  const reader = resp.body.getReader();
+  const totalBytes = Number(resp.headers.get("Content-Length")) || null;
+  let bytesRead = 0;
+
+  let partialBuf = new Uint8Array(0);
+  let ended = false;
+
+  async function batch(passwordsCount) {
+    if (ended) return null;
+
+    const offsets = new Uint32Array(passwordsCount);
+    const chunks = [];
+    let totalLen = 0;
+    let count = 0;
+
+    while (count < passwordsCount && !ended) {
+      let newlinePos;
+      while (
+        count < passwordsCount &&
+        (newlinePos = partialBuf.indexOf(10)) !== -1 // '\n'
+      ) {
+        // include the '\n' in output slice
+        const pwd = partialBuf.subarray(0, newlinePos + 1);
+        offsets[count] = totalLen;
+        chunks.push(pwd);
+        totalLen += pwd.length;
+        count++;
+
+        // drop processed portion
+        partialBuf = partialBuf.subarray(newlinePos + 1);
+      }
+
+      if (count < passwordsCount && !ended) {
+        const { done, value } = await reader.read();
+        if (done) {
+          ended = true;
+          if (partialBuf.length > 0 && count < passwordsCount) {
+            // last line without newline → add it as-is
+            offsets[count] = totalLen;
+            chunks.push(partialBuf);
+            totalLen += partialBuf.length;
+            count++;
+            partialBuf = new Uint8Array(0);
+          }
+          break;
+        } else {
+
+          // append new chunk
+          const buf = new Uint8Array(partialBuf.length + value.length);
+          buf.set(partialBuf, 0);
+          buf.set(value, partialBuf.length);
+          partialBuf = buf;
+        }
+      }
+    }
+
+    if (count === 0) return null;
+
+    // flatten into one buffer
+    const flat = new Uint8Array(totalLen);
+    let off = 0;
+    for (const c of chunks) {
+      flat.set(c, off);
+      off += c.length;
+    }
+    bytesRead += flat.length;
+
+    return {
+      passwords: flat.buffer,           // includes '\n' delimiters
+      offsets: offsets.slice(0, count).buffer,
+      count,
+      bytesRead,
+      totalBytes,
+      progress: totalBytes ? bytesRead / totalBytes : null
+    };
+  }
+
+  return batch;
+}
 
 function assert(cond, text) {
     if (!cond) {
@@ -316,4 +335,9 @@ function u32Buf(hex) {
 function BigToU32_reverse(n) {
     const hex = n.toString(16).padStart(64, '0')
     return hex.match(/.{1,8}/g).map(x => parseInt(x, 16)).reverse()
+}
+
+function log(text, clear=false) {
+    if (clear) window.output.innerHTML = ''
+    window.output.innerHTML += text + '\n'
 }

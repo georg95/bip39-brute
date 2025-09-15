@@ -188,14 +188,28 @@ fn ripemd160(inp: ptr<function, array<u32, 8>>) {
     inp[4] = h4;
 }
 
+const CHECK = array<array<u32, 5>, CHECK_COUNT>(
+    CHECK_HASHES
+);
+
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    if (gid.x == 0) {
+        output[0] = 0xffffffffu;
+    }
     var out: array<u32, 8>;
     sha256(&out, gid.x * 32u);
     ripemd160(&out);
-    output[gid.x * 5u] = out[0];
-    output[gid.x * 5u + 1u] = out[1];
-    output[gid.x * 5u + 2u] = out[2];
-    output[gid.x * 5u + 3u] = out[3];
-    output[gid.x * 5u + 4u] = out[4];
+    var found: u32 = 0;
+    for (var i = 0; i < 1; i++) {
+        if (out[0] == CHECK[i][0] &&
+            out[1] == CHECK[i][1] &&
+            out[2] == CHECK[i][2] &&
+            out[3] == CHECK[i][3] &&
+            out[4] == CHECK[i][4]) {
+            output[0] = gid.x;
+        }
+    }
+
+    
 }
