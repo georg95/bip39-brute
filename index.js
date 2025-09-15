@@ -42,7 +42,7 @@ async function brutePasswordGPU() {
     const WORKGROUP_SIZE = 64
     const { name, clean, inference, buildShader, swapBuffers } =
             await webGPUinit({ BUF_SIZE: batchSize*128, precomputeTable: await prepareCompute() })
-    const nextBatch = await getPasswords('/bruteforce-database/usernames.txt')
+    const nextBatch = await getPasswords('https://duyet.github.io/bruteforce-database/usernames.txt')
     const { bip39mask, addrHash160list, addrTypes } = await validateInput()
     // TODO support other address types
     const MNEMONIC = new TextEncoder().encode(bip39mask)
