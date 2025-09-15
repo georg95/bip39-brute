@@ -221,8 +221,6 @@ async function getPasswords(url) {
   const resp = await fetch(url)
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
   const reader = resp.body.getReader()
-  const totalBytes = Number(resp.headers.get("Content-Length")) || null
-  let bytesRead = 0
   let partialBuf = new Uint8Array(0)
   let ended = false
 
@@ -281,16 +279,7 @@ async function getPasswords(url) {
       flat.set(c, off)
       off += c.length
     }
-    bytesRead += totalLen
-
-    return {
-      passwords: flat.buffer,
-      offsets: offsets.slice(0, count).buffer,
-      count,
-      bytesRead,
-      totalBytes,
-      progress: totalBytes ? bytesRead / totalBytes : null
-    };
+    return { passwords: flat.buffer, count };
   }
 
   return batch;

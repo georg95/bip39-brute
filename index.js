@@ -38,11 +38,29 @@ document.addEventListener('DOMContentLoaded', () => {
 })
 
 async function brutePasswordGPU() {
+    let stopped = false
+    window.brute.onclick = () => { stopped = true }
+    window.brute.innerText = '🛑 STOP'
+    
     const batchSize = 1024 * 4
     const WORKGROUP_SIZE = 64
     const { name, clean, inference, buildShader, swapBuffers } =
             await webGPUinit({ BUF_SIZE: batchSize*128, precomputeTable: await prepareCompute() })
-    const nextBatch = await getPasswords('https://duyet.github.io/bruteforce-database/usernames.txt')
+    const PASSWORD_LISTS = [
+      { url: 'forced-browsing/all.txt', filePasswords: 43135 },
+      { url: 'usernames.txt', filePasswords: 403335 },
+      { url: '1000000-password-seclists.txt', filePasswords: 1000000 },
+      { url: '2151220-passwords.txt', filePasswords: 2151220 },
+      { url: '38650-password-sktorrent.txt', filePasswords: 38650 },
+      { url: '38650-username-sktorrent.txt', filePasswords: 38650 },
+      { url: 'uniqpass-v16-passwords.txt', filePasswords: 2151220 },
+      { url: 'cain.txt', filePasswords: 306706 },
+      { url: 'us-cities.txt', filePasswords: 20580 },
+      { url: '7-more-passwords.txt', filePasswords: 528136 },
+      { url: '8-more-passwords.txt', filePasswords: 61682 },
+      { url: 'facebook-firstnames.txt', filePasswords: 4347667 },
+    ]
+    PASSWORD_LISTS.sort((a, b) => a.filePasswords - b.filePasswords)
     const { bip39mask, addrHash160list, addrTypes } = await validateInput()
     // TODO support other address types
     const MNEMONIC = new TextEncoder().encode(bip39mask)
@@ -51,9 +69,21 @@ async function brutePasswordGPU() {
         WORKGROUP_SIZE, buildShader, swapBuffers, hashList: addrHash160list
     })
     log(`[${name}]\nBruteforce init...`, true)
-    while (true) {
+    let curList = 0
+    let listName = PASSWORD_LISTS[curList].url
+    let filePasswords = PASSWORD_LISTS[curList++].filePasswords
+    let nextBatch = await getPasswords(`https://duyet.github.io/bruteforce-database/${listName}`)
+    let processedPasswords = 0
+    while (!stopped) {
         const inp = await nextBatch(batchSize)
-        if (!inp) {
+        if (!inp && curList < PASSWORD_LISTS.length) {
+          listName = PASSWORD_LISTS[curList].url
+          filePasswords = PASSWORD_LISTS[curList++].filePasswords
+          nextBatch = await getPasswords(`https://duyet.github.io/bruteforce-database/${listName}`)
+          processedPasswords = 0
+          continue
+        }
+        if (!inp && curList >= PASSWORD_LISTS.length) {
           log(`Password not found :(`, true)
           break
         }
@@ -70,7 +100,9 @@ async function brutePasswordGPU() {
         out = await inference({ WORKGROUP_SIZE, shaders: pipeline, inp: new Uint32Array(inp.passwords), count: batchSize })
         const time = (performance.now() - start) / 1000
         const speed = batchSize / time | 0
-        log(`[${name}]\nBruteforce ${(inp.progress * 100).toFixed(1).padStart(4, '')}% ${speed} passwords/s`, true)
+        processedPasswords += inp.count
+        const progress = (processedPasswords / filePasswords * 100).toFixed(1).padStart(4, '')
+        log(`[${name}]\n${listName} (${curList}/${PASSWORD_LISTS.length}) ${progress}% ${speed} passwords/s`, true)
         if (out[0] !== 0xffffffff) {
             const passBuf = new Uint8Array(inp.passwords)
             const passBufIndex = new Uint32Array(inp.passwords, 128)
@@ -82,6 +114,8 @@ async function brutePasswordGPU() {
     }
 
     clean()
+    window.brute.onclick = brutePasswordGPU
+    window.brute.innerText = 'Brute'
 }
 
 async function brutePasswordCPU() {
