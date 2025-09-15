@@ -370,8 +370,8 @@ fn initBuffer(tmp_buf: ptr<function, array<u32, 32>>, seed1: ptr<function, array
   var passLen: u32 = 0;
   for (; passLen < MAX_PASSWORD_LEN; passLen++) {
     var offset = passOffset + passLen;
-    var b = (input[offset / 4] >> (24 - (offset % 4) * 8)) & 0xff;
-    if (b == 0) { break; }
+    var b = (input[offset / 4] >> ((offset % 4) * 8)) & 0xff;
+    if (b == 0x0Au) { break; }
     setByteArr(tmp_buf, 8u + passLen, b);
   }
   setByteArr(tmp_buf, passLen + 8, 0x00);

@@ -14,15 +14,16 @@ async function prepareCompute() {
     return precomputeTable
 }
 
-async function buildEntirePipeline({ WORKGROUP_SIZE, buildShader, swapBuffers }) {
+async function buildEntirePipeline({ WORKGROUP_SIZE, buildShader, swapBuffers, addressList }) {
+    assert(addressList.length === 1, 'TODO support for multiple address')
     let shaders = []
     let pbkdf2Code = (await fetch('wgsl/pbkdf2.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
     let deriveCode = (await fetch('wgsl/derive_coin.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
     let secp256k1Code = (await fetch('wgsl/secp256k1.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
     let hash160Code = (await fetch('wgsl/hash160.wgsl').then(r => r.text()))
         .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
-        .replaceAll('CHECK_COUNT', '1')
-        .replaceAll('CHECK_HASHES', 'array<u32, 5>(0x9fbc79f6u, 0x37c3117cu, 0xf710b441u, 0x401880a1u, 0x54f7bdf7u)')
+        .replaceAll('CHECK_COUNT', addressList.length.toString(10))
+        .replaceAll('CHECK_HASHES', await addrToWGSLScriptHash(addressList[0]))
         
     shaders.push(await buildShader(pbkdf2Code, 'main'))
     swapBuffers()
@@ -42,27 +43,47 @@ async function buildEntirePipeline({ WORKGROUP_SIZE, buildShader, swapBuffers })
     return shaders
 }
 
+async function addrToWGSLScriptHash(addr) {
+    const { hash160, type } = await addrToScriptHash(addr)
+    function valueLE(x) {
+        return '0x'+(((hash160[x*4 + 3] << 24) |
+            (hash160[x*4 + 2] << 16) |
+            (hash160[x*4 + 1] << 8) | 
+            hash160[x*4]) >>> 0).toString(16)+'u'
+    }
+    return `array<u32, 5>(${valueLE(0)}, ${valueLE(1)}, ${valueLE(2)}, ${valueLE(3)}, ${valueLE(4)})`
+}
+
 async function brutePassword() {
     const batchSize = 1024 * 4
     const WORKGROUP_SIZE = 64
-    // const { name, clean, inference, buildShader, swapBuffers } =
-    //         await webGPUinit({...options, BUF_SIZE: batchSize*128 })
+    const { name, clean, inference, buildShader, swapBuffers } =
+            await webGPUinit({ BUF_SIZE: batchSize*128, precomputeTable: await prepareCompute() })
     const nextBatch = await getPasswords('/bruteforce-database/usernames.txt')
-    // const pipeline = await buildEntirePipeline({ WORKGROUP_SIZE, buildShader, swapBuffers })
-
+    const pipeline = await buildEntirePipeline({
+        WORKGROUP_SIZE, buildShader, swapBuffers, addressList: ['1H9nFVdCB8idnntsDihrSFi4KYsT2QCT5A']
+    })
     while (true) {
         const inp = await nextBatch(batchSize)
-        console.log(inp)
         if (!inp) break
-        // out = await inference({ WORKGROUP_SIZE, shagetPasswordsders: pipeline, inp, count: batchSize })
-        // if (out[0] !== 0xffffffff) {
-        //     log()
-        // }
+        var strbuf = new Uint8Array(inp.passwords, 0, 128)
+        const MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
+        strbuf.set(new TextEncoder().encode(MNEMONIC))
+        bufUint32LESwap(strbuf, 0, 128)
+        
+        out = await inference({ WORKGROUP_SIZE, shaders: pipeline, inp: new Uint32Array(inp.passwords), count: batchSize })
+        if (out[0] !== 0xffffffff) {
+            const passBuf = new Uint8Array(inp.passwords)
+            const passBufIndex = new Uint32Array(inp.passwords, 128)
+            const index = passBufIndex[out[0]]
+            const index2 = passBufIndex[out[0] + 1]
+            console.log('FOUND password!', new TextDecoder().decode(passBuf.slice(index, index2 - 1)))
+        }
     }
 
-    // clean()
+    clean()
 }
-brutePassword()
+setTimeout(brutePassword)
 
 async function webGPUinit({ BUF_SIZE, adapter, device, precomputeTable }) {
     assert(navigator.gpu, 'Browser not support WebGPU')
@@ -204,78 +225,73 @@ async function webGPUinit({ BUF_SIZE, adapter, device, precomputeTable }) {
 
 
 async function getPasswords(url) {
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-
-  const reader = resp.body.getReader();
-  const totalBytes = Number(resp.headers.get("Content-Length")) || null;
-  let bytesRead = 0;
-
-  let partialBuf = new Uint8Array(0);
-  let ended = false;
+  const resp = await fetch(url)
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  const reader = resp.body.getReader()
+  const totalBytes = Number(resp.headers.get("Content-Length")) || null
+  let bytesRead = 0
+  let partialBuf = new Uint8Array(0)
+  let ended = false
 
   async function batch(passwordsCount) {
-    if (ended) return null;
-
-    const offsets = new Uint32Array(passwordsCount);
-    const chunks = [];
-    let totalLen = 0;
-    let count = 0;
+    if (ended) return null
+    const offsets = new Uint32Array(passwordsCount)
+    const chunks = []
+    let totalLen = 0
+    let count = 0
+    const PASSW_OFFSET = 128 + passwordsCount*4
 
     while (count < passwordsCount && !ended) {
-      let newlinePos;
+      let newlinePos
       while (
         count < passwordsCount &&
-        (newlinePos = partialBuf.indexOf(10)) !== -1 // '\n'
+        (newlinePos = partialBuf.indexOf(10)) !== -1
       ) {
-        // include the '\n' in output slice
-        const pwd = partialBuf.subarray(0, newlinePos + 1);
-        offsets[count] = totalLen;
-        chunks.push(pwd);
-        totalLen += pwd.length;
-        count++;
-
-        // drop processed portion
-        partialBuf = partialBuf.subarray(newlinePos + 1);
+        const pwd = partialBuf.subarray(0, newlinePos + 1)
+        offsets[count] = totalLen + PASSW_OFFSET
+        chunks.push(pwd)
+        totalLen += pwd.length
+        count++
+        partialBuf = partialBuf.subarray(newlinePos + 1)
       }
 
       if (count < passwordsCount && !ended) {
-        const { done, value } = await reader.read();
+        const { done, value } = await reader.read()
         if (done) {
-          ended = true;
+          ended = true
           if (partialBuf.length > 0 && count < passwordsCount) {
-            // last line without newline → add it as-is
-            offsets[count] = totalLen;
-            chunks.push(partialBuf);
-            totalLen += partialBuf.length;
-            count++;
-            partialBuf = new Uint8Array(0);
+            offsets[count] = totalLen + PASSW_OFFSET
+            chunks.push(partialBuf)
+            totalLen += partialBuf.length
+            count++
+            partialBuf = new Uint8Array(0)
           }
-          break;
+          break
         } else {
-
-          // append new chunk
-          const buf = new Uint8Array(partialBuf.length + value.length);
-          buf.set(partialBuf, 0);
-          buf.set(value, partialBuf.length);
-          partialBuf = buf;
+          const buf = new Uint8Array(partialBuf.length + value.length)
+          buf.set(partialBuf, 0)
+          buf.set(value, partialBuf.length)
+          partialBuf = buf
         }
       }
     }
 
-    if (count === 0) return null;
+    if (count === 0) return null
 
-    // flatten into one buffer
-    const flat = new Uint8Array(totalLen);
-    let off = 0;
+    let bufLen = 128 + offsets.byteLength + totalLen
+    bufLen += 4 - bufLen % 4
+    const flat = new Uint8Array(bufLen)
+    var strbuf = new Uint8Array(offsets.buffer, offsets.byteOffset, offsets.byteLength)
+    flat.set(strbuf, 128)
+    let off = PASSW_OFFSET
     for (const c of chunks) {
-      flat.set(c, off);
-      off += c.length;
+      flat.set(c, off)
+      off += c.length
     }
-    bytesRead += flat.length;
+    bytesRead += totalLen
 
     return {
-      passwords: flat.buffer,           // includes '\n' delimiters
+      passwords: flat.buffer,
       offsets: offsets.slice(0, count).buffer,
       count,
       bytesRead,

@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mnemonic bruteforce benchmark</title>
+  <script src="index.js"></script>
   <script src="webgpu.js"></script>
   <script src="secp256k1.js"></script>
   <script src="tests.js"></script>
@@ -76,8 +77,10 @@ async function runBenchmark(options) {
     window.output.innerHTML += 'Initialize data... '
     const start = performance.now()
     const WORKGROUP_SIZE = 64
-    const pipeline = await buildEntirePipeline({ buildShader, swapBuffers, WORKGROUP_SIZE })
-    const PASSWORD = 'password'
+    const pipeline = await buildEntirePipeline({
+        buildShader, swapBuffers, WORKGROUP_SIZE, addressList: ['1H9nFVdCB8idnntsDihrSFi4KYsT2QCT5A'],
+    })
+    const PASSWORD = 'Abbie'
     const digits = passwords.toString(10).length
     const PASS_LEN = Math.ceil((PASSWORD.length + digits + 1) / 4) + 1
     const inp = new Uint32Array(32 + PASS_LEN * passwords).fill(0)
@@ -87,13 +90,12 @@ async function runBenchmark(options) {
 
     let passwordOffset = 128 + passwords * 4
     for (let i = 0; i < passwords; i++) {
-        const curPass = PASSWORD + i.toString(10)
+        const curPass = PASSWORD + (i === 35 ? '' : i.toString(10)) + '\n'
         strbuf.set(new TextEncoder().encode(curPass), passwordOffset)
         inp[32 + i] = passwordOffset
-        passwordOffset += curPass.length + 1
+        passwordOffset += curPass.length
     }
     bufUint32LESwap(strbuf, 0, 128)
-    bufUint32LESwap(strbuf, 128 + passwords * 4, strbuf.length)
     
     log(`[${((performance.now() - start) / 1000).toFixed(1)}s]\n`)
     for (let mode of ['all', 'pbkdf2']) {
