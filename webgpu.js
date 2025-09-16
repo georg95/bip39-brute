@@ -1,19 +1,3 @@
-async function prepareCompute() {
-    const PRECOMPUTE_WINDOW = 8
-    const PRECOMPUTE_SIZE = 2 ** (PRECOMPUTE_WINDOW - 1) * (Math.ceil(256 / PRECOMPUTE_WINDOW)) * 64
-    const precomputeTable = new Uint32Array(PRECOMPUTE_SIZE / 4).fill(0)
-    precompute(PRECOMPUTE_WINDOW, (batch, i) => {
-        batch.forEach(({X, Y}, j) => {
-            const index = i * batch.length + j
-            const xx = BigToU32_reverse(X)
-            for (var x = 0; x < 8; x++) { precomputeTable[index*16 + x] = xx[x] }
-            const yy = BigToU32_reverse(Y)
-            for (var y = 0; y < 8; y++) { precomputeTable[index*16 + 8 + y] = yy[y] }
-        })
-    })
-    return precomputeTable
-}
-
 async function buildEntirePipeline({ WORKGROUP_SIZE, buildShader, swapBuffers, hashList }) {
     let shaders = []
     let pbkdf2Code = (await fetch('wgsl/pbkdf2.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
@@ -56,10 +40,10 @@ function hash160ToWGSLArray(hash160List) {
     ).join(',\n')
 }
 
-async function webGPUinit({ BUF_SIZE, adapter, device, precomputeTable }) {
+async function webGPUinit({ BUF_SIZE, adapter, device }) {
     assert(navigator.gpu, 'Browser not support WebGPU')
     assert(BUF_SIZE, 'no BUF_SIZE passed')
-    assert(precomputeTable, 'no precompute table passed')
+    const precomputeTable = await prepareCompute()
     if (!adapter && !device) {
         adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })
         device = await adapter.requestDevice() 
@@ -90,6 +74,7 @@ async function webGPUinit({ BUF_SIZE, adapter, device, precomputeTable }) {
         size: 1024,
         usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
     });
+
     device.queue.writeBuffer(secp256k1PrecomputeBuffer, 0, precomputeTable)
 
     function clean() {
@@ -285,6 +270,70 @@ async function getPasswords(url) {
   return batch;
 }
 
+async function prepareCompute() {
+    function precomputeSecp256k1Table(W, onBatch) {
+    const P = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2fn;
+    const M = (a, b = P) => { const r = a % b; return r >= 0n ? r : b + r; };
+    function secp256k1_add({ X: X1, Y: Y1, Z: Z1 }, { X: X2, Y: Y2, Z: Z2 }) {
+        let X3 = 0n, Y3 = 0n, Z3 = 0n; let t0 = M(X1 * X2); let t1 = M(Y1 * Y2); let t2 = M(Z1 * Z2);
+        let t3 = M(X1 + Y1); let t4 = M(X2 + Y2); let t5 = M(X2 + Z2); t3 = M(t3 * t4);
+        t4 = M(t0 + t1); t3 = M(t3 - t4); t4 = M(X1 + Z1); t4 = M(t4 * t5); t5 = M(t0 + t2);
+        t4 = M(t4 - t5); t5 = M(Y1 + Z1); X3 = M(Y2 + Z2); t5 = M(t5 * X3); X3 = M(t1 + t2);
+        t5 = M(t5 - X3); t2 = M(21n * t2); X3 = M(t1 - t2); Z3 = M(t1 + t2); Y3 = M(X3 * Z3);
+        t1 = M(t0 + t0); t1 = M(t1 + t0); t4 = M(21n * t4); t0 = M(t1 * t4); Y3 = M(Y3 + t0);
+        t0 = M(t5 * t4); X3 = M(t3 * X3); X3 = M(X3 - t0); t0 = M(t3 * t1); Z3 = M(t5 * Z3);
+        Z3 = M(Z3 + t0); return { X: X3, Y: Y3, Z: Z3 };
+    }
+    function batchAff(pointsBatch) {
+      let acc = 1n
+      const invert = (num) => {
+        let a = M(num, P), b = P, x = 0n, y = 1n, u = 1n, v = 0n;
+        while (a !== 0n) {
+            const q = b / a, r = b % a;
+            const m = x - u * q, n = y - v * q;
+            b = a, a = r, x = u, y = v, u = m, v = n;
+          }
+          return M(x, P);
+        };
+        const scratch = [1n].concat(pointsBatch.map(ni => acc = (acc * ni.Z) % P))
+        let inv = invert(acc)
+        const Zinv = new Array(pointsBatch.length);
+        for (let i = pointsBatch.length - 1; i >= 0; i--) {
+          Zinv[i] = (scratch[i] * inv) % P
+          inv = (inv * pointsBatch[i].Z) % P
+        }
+        return Zinv.map((iz, i) => ({ X: M(pointsBatch[i].X * iz), Y: M(pointsBatch[i].Y * iz), Z: 1n }));
+    }
+    let p = { X: 0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798n, Y: 0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8n, Z: 1n };
+    let b = p;
+    for (let w = 0; w < Math.ceil(256 / W); w++) {
+        b = p
+        var pointsBatch = []
+        pointsBatch.push(b);
+        for (let i = 1; i < 2 ** (W - 1); i++) {
+          b = secp256k1_add(b, p);
+          pointsBatch.push(b);
+        }
+        onBatch(batchAff(pointsBatch), w)
+        p = batchAff([secp256k1_add(b, b)])[0];
+      }
+    }
+
+    const PRECOMPUTE_WINDOW = 8
+    const PRECOMPUTE_SIZE = 2 ** (PRECOMPUTE_WINDOW - 1) * (Math.ceil(256 / PRECOMPUTE_WINDOW)) * 64
+    const precomputeTable = new Uint32Array(PRECOMPUTE_SIZE / 4).fill(0)
+    precomputeSecp256k1Table(PRECOMPUTE_WINDOW, (batch, i) => {
+      batch.forEach(({X, Y}, j) => {
+        const index = i * batch.length + j
+        const xx = BigToU32_reverse(X)
+        for (var x = 0; x < 8; x++) { precomputeTable[index*16 + x] = xx[x] }
+        const yy = BigToU32_reverse(Y)
+        for (var y = 0; y < 8; y++) { precomputeTable[index*16 + 8 + y] = yy[y] }
+      })
+    })
+    return precomputeTable
+}
+
 function assert(cond, text) {
     if (!cond) {
         const err = new Error(text || 'unknown error')
@@ -292,10 +341,6 @@ function assert(cond, text) {
         err.stack = err.stack.split('\n').filter(x => !x.includes('at assert')).join('\n')
         throw err
     }
-}
-
-function leSwap(str) {
-    return str[6]+str[7]+str[4]+str[5]+str[2]+str[3]+str[0]+str[1]
 }
 
 function bufUint32LESwap(buf, start, end) {
@@ -310,24 +355,6 @@ function bufUint32LESwap(buf, start, end) {
         buf[i + 2] = b
         buf[i + 3] = a
     }
-}
-
-function toHex(arr) {
-    if (arr instanceof Uint8Array) {
-        return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
-    }
-    if (arr instanceof Uint32Array) {
-        return Array.from(arr).map(b => b.toString(16).padStart(8, '0')).join('');
-    }
-    throw new Error('toHex expect u8/u32')
-}
-
-function u32Buf(hex) {
-    const inp = new Uint32Array(1024).fill(0)
-    assert(hex.length % 8 === 0, `setBuf expect input of length 8*n, got: ${hex}`)
-    const values = hex.match(/.{1,8}/g).map(x => parseInt(x, 16))
-    inp.set(new Uint32Array(values), 0)
-    return inp
 }
 
 function BigToU32_reverse(n) {

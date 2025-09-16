@@ -1,39 +1,26 @@
-# Bitcoin bip39 seed mnemonic recovery
+# WebGPU Bitcoin bip39 seed mnemonic recovery
 
 ## [GPU Benchmark](https://georg95.github.io/bip39-brute/benchmark.html)
 
-## [App page (CPU)](https://georg95.github.io/bip39-brute/index.html)
+## [App page (GPU)](https://georg95.github.io/bip39-brute/index.html)
 
 Test data, mnemonic:
 ```
-tenant grid summer affair garlic monitor off repeat tongue define,absent absent debris family only trouble rigid absent define,absent process * apology plate * slow
+expose census trophy review common rebel ask depend build caught frame accident naive shiver inmate host assault fan tonight accident left useful tongue blood
 ```
-Test data, address list (m/84'/0'/0'/0/1, m/84'/0'/0'/0/2):
+Test data, address list (m/44'/0'/0'/0/0, m/44'/0'/0'/0/1):
 ```
-bc1q43a9fqn2pmed76n4q8rvahfz0zdp9udyd6edch
-bc1q0esjzsh4et4wxrfumglc97fpksvmwp8dwuwdxx
+1PKkTsFscAharNGTvpAz5JbyztmcDkSa3Y
+1E8NiS2eqpAnfDxYk1Bjc4XMC5Ldyat6Hk
 ```
+Password: gauffers (usernames.txt password list)
 
 ### TODO:
 
-- [x] Working demo
-- [x] Multithreading CPU
-- [x] Multiple derivation addresses
-- [x] Legacy/P2SH/Segwit bitcoin addresses
-- [x] 12/15/18/24-words mnemonic
-- [x] More seed templates
-- [x] Bruteforce settings
-- [x] Ethereum wallets
-- [x] BSC wallets
-- [x] Tron wallets
-- [ ] Password bruteforce mode
+- [x] Password bruteforce mode
+- [ ] Multiple derivation addresses
+- [ ] P2SH bitcoin addresses
+- [ ] Bruteforce settings
+- [ ] Ethereum/BSC wallets
+- [ ] Missing words bruteforce mode
 - [ ] WebGPU backend
-  - [x] SHA-256
-  - [x] SHA-512
-  - [x] PBKDF2-HMAC-512
-  - [x] secp256k1
-  - [x] ripemd160
-  - [x] Mnemonic to seed
-  - [x] Derive path
-  - [x] Mnemonic to seeds batch
-  - [ ] Mnemonic checksum

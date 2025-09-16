@@ -2,10 +2,9 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Bitcoin Address Generator</title>
+  <title>Bip39 GPU bruteforce</title>
   <script src="index.js"></script>
   <script src="webgpu.js"></script>
-  <script src="secp256k1.js"></script>
 </head>
     <style>
         html, body {
@@ -68,8 +67,6 @@
     </header>
     <header id="settings-pane">
         <h1 class="top-header">Settings <button id="hide-settings">⚙️</button></h1>
-        <h2>Threads count: <span id="threadsView">1</span></h2>
-        <input type="range" id="threads" min="1" max="8" value="4">
         <h2>Derive addresses: <span id="deriveView">5</span></h2>
         <input type="range" id="derive" min="0" step="5" max="50" value="5">
     </header>

@@ -3,9 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Mnemonic bruteforce benchmark</title>
+  <title>Bip39 GPU bruteforce benchmark</title>
   <script src="webgpu.js"></script>
-  <script src="secp256k1.js"></script>
 </head>
     <style>
         html, body {
@@ -39,34 +38,26 @@
     <pre id="output"></pre>
 </body>
 <script>
-function log(text, clear=false) {
-    if (clear) window.output.innerHTML = ''
-    window.output.innerHTML += text + '\n'
-}
-document.addEventListener('DOMContentLoaded', () => {
+window.benchmark.onclick = async () => {
+    assert(window.isSecureContext, 'WebGPU disabled for http:// protocol, works only on https://')
+    assert(navigator.gpu, 'Browser not support WebGPU')
+    window.benchmark.style.display = 'none'
+    window.output.innerHTML += 'Precompute secp256k1 table... '
+    const start = performance.now()
+    log(`[${((performance.now() - start) / 1000).toFixed(1)}s]`)
+    const adapter1 = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" })
+    const device1 = await adapter1.requestDevice()
+    await runBenchmark({ device: device1, adapter: adapter1 })
 
-    window.benchmark.onclick = async () => {
-        assert(window.isSecureContext, 'WebGPU disabled for http:// protocol, works only on https://')
-        assert(navigator.gpu, 'Browser not support WebGPU')
-        window.benchmark.style.display = 'none'
-        window.output.innerHTML += 'Precompute secp256k1 table... '
-        const start = performance.now()
-        const precomputeTable = await prepareCompute()
-        log(`[${((performance.now() - start) / 1000).toFixed(1)}s]`)
-        const adapter1 = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" })
-        const device1 = await adapter1.requestDevice()
-        await runBenchmark({ precomputeTable, device: device1, adapter: adapter1 })
-
-        const adapter2 = await navigator.gpu.requestAdapter({ powerPreference: "low-power" })
-        const device2 = await adapter2.requestDevice()
-        if (adapter1.info.device !== adapter2.info.device || adapter1.info.description !== adapter2.info.description) {
-            window.output.innerHTML += '\n'
-            await runBenchmark({ precomputeTable, device: device2, adapter: adapter2 })
-        }
-        log('\n✅ DONE')
-        window.benchmark.style.display = ''
+    const adapter2 = await navigator.gpu.requestAdapter({ powerPreference: "low-power" })
+    const device2 = await adapter2.requestDevice()
+    if (adapter1.info.device !== adapter2.info.device || adapter1.info.description !== adapter2.info.description) {
+        window.output.innerHTML += '\n'
+        await runBenchmark({ device: device2, adapter: adapter2 })
     }
-})
+    log('\n✅ DONE')
+    window.benchmark.style.display = ''
+}
 async function runBenchmark(options) {
     const passwords = 1024 * 32
     const { name, clean, inference, buildShader, swapBuffers } =
