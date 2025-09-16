@@ -1,6 +1,10 @@
-async function buildEntirePipeline({ WORKGROUP_SIZE, buildShader, swapBuffers, hashList }) {
+async function buildEntirePipeline({ MNEMONIC, WORKGROUP_SIZE, buildShader, swapBuffers, hashList }) {
     let shaders = []
-    let pbkdf2Code = (await fetch('wgsl/pbkdf2.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
+    let pbkdf2Code = (await fetch('wgsl/pbkdf2_template.wgsl').then(r => r.text()))
+    pbkdf2Code = (await unrolledSha512_wgpu(pbkdf2Code, MNEMONIC))
+        .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
+    // unrolled code
+    // console.log(pbkdf2Code)
     let deriveCode = (await fetch('wgsl/derive_coin.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
     let secp256k1Code = (await fetch('wgsl/secp256k1.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
     let hash160Code = (await fetch('wgsl/hash160.wgsl').then(r => r.text()))
@@ -365,4 +369,162 @@ function BigToU32_reverse(n) {
 function log(text, clear=false) {
     if (clear) window.output.innerHTML = ''
     window.output.innerHTML += text + '\n'
+}
+
+async function unrolledSha512_wgpu(template, MNEMONIC) {
+  var snippet0 = (i) => `
+      t1_lo = hlo + (((elo >> 14) | (ehi << 18)) ^ ((elo >> 18) | (ehi << 14)) ^ ((ehi >> 9) | (elo << 23)));
+      t1_hi = hhi + (((ehi >> 14) | (elo << 18)) ^ ((ehi >> 18) | (elo << 14)) ^ ((elo >> 9) | (ehi << 23))) + select(0u, 1u, t1_lo < hlo);
+      tmp = (elo & flo) ^ ((~elo) & glo);
+      t1_lo = t1_lo + tmp;
+      t1_hi = t1_hi + ((ehi & fhi) ^ ((~ehi) & ghi)) + select(0u, 1u, t1_lo < tmp);
+      t1_lo = t1_lo + K[${i + 1}];
+      t1_hi = t1_hi + K[${i}] + select(0u, 1u, t1_lo < K[${i + 1}]);
+      t1_lo = t1_lo + W[${i + 1}];
+      t1_hi = t1_hi + W[${i}] + select(0u, 1u, t1_lo < W[${i + 1}]);
+      tmp = ((alo >> 28) | (ahi << 4)) ^ ((ahi >> 2) | (alo << 30)) ^ ((ahi >> 7) | (alo << 25));
+      t2_lo = tmp + ((alo & blo) ^ (alo & clo) ^ (blo & clo));
+      t2_hi = (((ahi >> 28) | (alo << 4)) ^ ((alo >> 2) | (ahi << 30)) ^ ((alo >> 7) | (ahi << 25))) + ((ahi & bhi) ^ (ahi & chi) ^ (bhi & chi)) + select(0u, 1u, t2_lo < tmp);
+      dlo += t1_lo;
+      dhi += t1_hi + select(0u, 1u, dlo < t1_lo);
+      hlo = t1_lo + t2_lo;
+      hhi = t1_hi + t2_hi + select(0u, 1u, hlo < t1_lo);`;
+
+  var snippet = (i) => {
+    var xhi1 = `W[${(i + 28) & 0x1f}]`
+    var xlo1 = `W[${(i + 29) & 0x1f}]`
+    var xhi2 = `W[${(i + 2) & 0x1f}]`
+    var xlo2 = `W[${(i + 3) & 0x1f}]`
+    return `
+      t1_lo = ((${xhi1} >> 19) | (${xlo1} << 13)) ^ ((${xlo1} >> 29) | (${xhi1} << 3)) ^ (${xhi1} >> 6);
+      t1_hi = ((${xlo1} >> 19) | (${xhi1} << 13)) ^ ((${xhi1} >> 29) | (${xlo1} << 3)) ^ ((${xlo1} >> 6) | (${xhi1} << 26));
+      t2_hi = ((${xhi2} >> 1) | (${xlo2} << 31)) ^ ((${xhi2} >> 8) | (${xlo2} << 24)) ^ (${xhi2} >> 7);
+      t2_lo = ((${xlo2} >> 1) | (${xhi2} << 31)) ^ ((${xlo2} >> 8) | (${xhi2} << 24)) ^ ((${xlo2} >> 7) | (${xhi2} << 25));
+      acc_lo = W[${(i + 19) & 0x1f}] + W[${(i + 1) & 0x1f}];
+      acc_hi = W[${(i + 18) & 0x1f}] + W[${i & 0x1f}] + select(0u, 1u, acc_lo < W[${(i + 19) & 0x1f}]);
+      acc_lo = acc_lo + t1_hi;
+      acc_hi = acc_hi + t1_lo + select(0u, 1u, acc_lo < t1_hi);
+      W[${(i + 1) & 0x1f}] = acc_lo + t2_lo;
+      W[${i & 0x1f}] = acc_hi + t2_hi + select(0u, 1u, W[${(i + 1) & 0x1f}] < t2_lo);
+      t1_lo = hlo + (((elo >> 14) | (ehi << 18)) ^ ((elo >> 18) | (ehi << 14)) ^ ((ehi >> 9) | (elo << 23)));
+      t1_hi = hhi + (((ehi >> 14) | (elo << 18)) ^ ((ehi >> 18) | (elo << 14)) ^ ((elo >> 9) | (ehi << 23))) + select(0u, 1u, t1_lo < hlo);
+      tmp = (elo & flo) ^ ((~elo) & glo);
+      t1_lo = t1_lo + tmp;
+      t1_hi = t1_hi + ((ehi & fhi) ^ ((~ehi) & ghi)) + select(0u, 1u, t1_lo < tmp);
+      t1_lo = t1_lo + K[i + ${i + 1}];
+      t1_hi = t1_hi + K[i + ${i}] + select(0u, 1u, t1_lo < K[i + ${i + 1}]);
+      t1_lo = t1_lo + W[${(i + 1) & 0x1f}];
+      t1_hi = t1_hi + W[${i & 0x1f}] + select(0u, 1u, t1_lo < W[${(i + 1) & 0x1f}]);
+      tmp = ((alo >> 28) | (ahi << 4)) ^ ((ahi >> 2) | (alo << 30)) ^ ((ahi >> 7) | (alo << 25));
+      t2_lo = tmp + ((alo & blo) ^ (alo & clo) ^ (blo & clo));
+      t2_hi = (((ahi >> 28) | (alo << 4)) ^ ((alo >> 2) | (ahi << 30)) ^ ((alo >> 7) | (ahi << 25))) + ((ahi & bhi) ^ (ahi & chi) ^ (bhi & chi)) + select(0u, 1u, t2_lo < tmp);
+      dlo += t1_lo;
+      dhi += t1_hi + select(0u, 1u, dlo < t1_lo);
+      hlo = t1_lo + t2_lo;
+      hhi = t1_hi + t2_hi + select(0u, 1u, hlo < t1_lo);`
+  };
+
+  function rollX(snippet, x) {
+    function roll(curSnippet) {
+      const letters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+      let curS = curSnippet.replaceAll('ahi', 'XXXXhi').replaceAll('alo', 'XXXXlo')
+      for (let letter of letters.slice(1)) {
+        const next = letters[letters.indexOf(letter) - 1]
+        curS = curS.replaceAll(letter+'hi', next+'hi').replaceAll(letter+'lo', next+'lo')
+      }
+      curS = curS.replaceAll('XXXXhi', 'hhi').replaceAll('XXXXlo', 'hlo')
+      return curS
+    }
+    let curS = snippet
+    for (let i = 0; i < x; i++) { curS = roll(curS) }
+    return curS
+  }
+
+  var INIT_ROUNDS = ''
+  for (let i = 0; i < 32; i+=2) {
+    INIT_ROUNDS += rollX(snippet0(i), i / 2)
+  }
+
+  var MAIN_ROUNDS = ''
+  for (let i = 0; i < 32; i+=2) {
+    MAIN_ROUNDS += rollX(snippet(i), i / 2)
+  }
+
+  const seed1 = Array.from(await sha512round(MNEMONIC, 0x36)).map(x => '0x'+x.toString(16)+'u')
+  const seed2 = Array.from(await sha512round(MNEMONIC, 0x5c)).map(x => '0x'+x.toString(16)+'u')
+
+  for (let i = 15; i >= 0; i--) {
+    template = template.replaceAll(`SEED1_${i}`, seed1[i]).replaceAll(`SEED2_${i}`, seed2[i])
+  }
+  template = template.replaceAll('INIT_BUF', Array(32).fill(0).map((_, i) => `var W${i} = buf[${i}];`).join(' '))
+
+  template = template.replaceAll('INIT_ROUNDS', INIT_ROUNDS).replaceAll('MAIN_ROUNDS', `
+    for (var i: u32 = 32u; i < 160u; i += 32u) {
+      ${MAIN_ROUNDS}
+    }
+  `)
+
+  for (let i = 31; i >= 0; i--) {
+    template = template.replaceAll(`W[${i}]`, `W${i}`)
+  }
+
+  return template
+}
+
+
+async function sha512round(mnemo, XOR) {
+  const SHA512_WASM = new Uint8Array((
+  "0061736d010000000105016000017f030302000005030100110619037f01418080c0000b7f00418085c0000b7f00418086c0000b073805066d656d6f" +
+  "727902000b6765744d6e656d6f5074720000086d6e656d6f6e696303010b7368613531325f7761736d0001047365656403020afc0a020800418085c0" +
+  "80000bf00a01277f2380808080004180056b220024808080800041002101037f02402001418001470d00412021024100210303400240200241a00149" +
+  "0d0041f9c2f89b01210441999a83df05210541ebfa865a210641abb38ffc01210741e7cca7d0062108418892f39d7f21094185dd9edb7b210a41bbce" +
+  "aaa678210341f2e6bbe303210b41abf0d374210c41baeabfaa7a210d41f1edf4f805210e41ffa4b98805210f41d1859aef7a2101418cd195d8792110" +
+  "419fd8f9d9022111410021124100211302400340200621142007211520102107201121062013419f014b0d012001410e742116200141127421172001" +
+  "41097621182012418080c080006a21192012418480c080006a2102200020126a211a2003200c71211b2003200c73211c2009410276211d2009410474" +
+  "211e2009410776211f200a200b712120200a200b732121201241086a2112201341026a211320012111200f2110201a41046a28020022222002280200" +
+  "22232004200f4112742001410e7672200f410e74200141127672732001411774200f41097672736a222420142001417f73712001200671726a22256a" +
+  "22266a2202200e6a220e210120052017200f410e76722016200f41127672732018200f41177472736a2015200f417f7371200f200771726a20242004" +
+  "496a20252024496a20192802006a20262023496a201a2802006a20022022496a2204200d6a200e2002496a210f200c210e200b210d2003210c200a21" +
+  "0b200921032008210a200220084104742009411c76722009411e7420084102767273200941197420084107767273221a201b2009201c71736a22246a" +
+  "22052109201e2008411c7672201d2008411e747273201f2008411974727320202008202171736a2024201a496a20046a20052002496a210820152105" +
+  "201421040c000b0b4100200441f9c2f89b016a3602bc86c080004100201441ebfa865a6a3602b486c0800041002006419fd8f9d9026a3602ac86c080" +
+  "004100200141d1859aef7a6a3602a486c080004100200e41f1edf4f8056a36029c86c080004100200c41abf0d3746a36029486c080004100200341bb" +
+  "ceaaa6786a36028c86c0800041002009418892f39d7f6a36028486c080004100419a9a83df0541999a83df0520044186bd87e47e4b1b20056a3602b8" +
+  "86c08000410041acb38ffc0141abb38ffc012014419485f9254b1b20156a3602b086c080004100418dd195d879418cd195d879200641e0a786a67d4b" +
+  "1b20076a3602a886c0800041004180a5b9880541ffa4b98805200141aefae590054b1b200f6a3602a086c08000410041bbeabfaa7a41baeabfaa7a20" +
+  "0e418e928b877a4b1b200d6a36029886c08000410041f3e6bbe30341f2e6bbe303200c41d48fac0b4b1b200b6a36029086c0800041004186dd9edb7b" +
+  "4185dd9edb7b200341c4b1d5d9074b1b200a6a36028886c08000410041e8cca7d00641e7cca7d006200941f7ed8ce2004b1b20086a36028086c08000" +
+  "20004180056a248080808000418086c080000f0b200020036a22014184016a200141046a280200220b200141cc006a2802006a220c200141f0006a28" +
+  "0200220f410d74200141f4006a2802002208411376722008410374200f411d767273200f411a74200841067672736a220a200141086a280200220941" +
+  "1f742001410c6a2802002212410176722009411874201241087672732009411974201241077672736a220636020020014180016a200141c8006a2802" +
+  "00200f4103742008411d7672200f410676732008410d74200f41137672736a20124118742009410876722009410776732012411f7420094101767273" +
+  "6a20012802006a200c200b496a200a200c496a2006200a496a360200200341086a2103200241026a21020c000b0b200020016a2001418085c080006a" +
+  "280200360200200141046a21010c000b0b0b8a050100418080c0000b8005982f8a4222ae28d791443771cd65ef23cffbc0b52f3b4deca5dbb5e9bcdb" +
+  "89815bc2563938b548f3f111f15919d005b6a4823f929b4f19afd55e1cab18816dda98aa07d8420203a3015b8312be6f7045be8531248cb2e44ec37d" +
+  "0c55e2b4ffd5745dbe726f897bf2feb1de80b196163ba706dc9b3512c72574f19bc1942669cfc1699be4d24af19e8647beefe3254f38c69dc10fb5d5" +
+  "8c8bcca10c24659cac776f2ce92d75022b59aa84744a83e4a66edca9b05cd4fb41bdda88f976b553118352513e98abdf66ee6dc631a81032b42dc827" +
+  "03b03f21fb98c77f59bfe40eefbef30be0c6c28fa83d4791a7d525a70a935163ca066f8203e067292914706e0e0a850ab727fc2fd24638211b2e26c9" +
+  "265cfc6d2c4ded2ac45a130d3853dfb3959d54730a65de63af8bbb0a6a76a8b2773c2ec9c281e6aeed47852c72923b358214a1e8bfa26403f14c4b66" +
+  "1aa8013042bc708b4bc29197f8d0a3516cc730be540619e892d11852efd6240699d610a9655585350ef42a20715770a06a10b8d1bb3216c1a419c8d0" +
+  "d2b8086c371e53ab41514c77482799eb8edfb5bcb034a8489be1b30c1c39635ac9c54aaad84ecb8a41e34fca9c5b73e36377f36f2e68a3b8b2d6ee82" +
+  "8f74fcb2ef5d6f63a578602f17431478c88472abf0a10802c78cec39641afaffbe90281e6323eb6c50a4e9bd82def7a3f9be1579c6b2f27871c62b53" +
+  "72e3ce3e27ca9c6126eac7b886d107c2c021d67ddaea1eebe0cd7f4f7df578d16eeeaa67f006ba6f1772c57d630aa698c8a204983f11ae0df9be350b" +
+  "711b1b471c13f577db28847d04237babca329324c7400abe9e3cbcbec915c4671d434c0d109cbed4c54cb6423ecb9c297f592a7e65fcab6fcb5fecfa" +
+  "d63a8c19446c1758474a").match(/.{2}/g).map(x => parseInt(x, 16)))
+  const {instance: { exports: { mnemonic: { value: mnemonicPtr }, seed: { value: seedPtr }, sha512_wasm, memory: {buffer} } }} =
+  await WebAssembly.instantiate(SHA512_WASM)
+  const buf = new Uint8Array(buffer, mnemonicPtr, 128);
+  const outMemory = new Uint32Array(buffer, seedPtr, 16);
+  const MNEMONIC = new TextEncoder().encode(mnemo)
+  for (let i = 0; i < 128; i++) { buf[i] = 0 }
+  if (MNEMONIC.length <= 128) {
+    buf.set(MNEMONIC)
+  } else {
+    buf.set(new Uint8Array(await crypto.subtle.digest('SHA-512', MNEMONIC)))
+  }
+  for (let i = 0; i < 128; i+=4) {
+    ([buf[i+3], buf[i+2], buf[i+1], buf[i]] = [buf[i]^XOR, buf[i+1]^XOR, buf[i+2]^XOR, buf[i+3]^XOR])
+  }
+  sha512_wasm()
+  return outMemory.slice()
 }

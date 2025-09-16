@@ -31,7 +31,7 @@ async function brutePasswordGPU() {
     window.brute.onclick = () => { stopped = true }
     window.brute.innerText = '🛑 STOP'
     
-    const batchSize = 1024 * 4
+    const batchSize = 1024 * 32
     const WORKGROUP_SIZE = 64
     const { name, clean, inference, buildShader, swapBuffers } = await webGPUinit({ BUF_SIZE: batchSize*128 })
     const PASSWORD_LISTS = [
@@ -51,10 +51,8 @@ async function brutePasswordGPU() {
     // PASSWORD_LISTS.sort((a, b) => a.filePasswords - b.filePasswords)
     const { bip39mask, addrHash160list, addrTypes } = await validateInput()
     // TODO support other address types
-    const MNEMONIC = new TextEncoder().encode(bip39mask)
-
     const pipeline = await buildEntirePipeline({
-        WORKGROUP_SIZE, buildShader, swapBuffers, hashList: addrHash160list
+        MNEMONIC: bip39mask, WORKGROUP_SIZE, buildShader, swapBuffers, hashList: addrHash160list
     })
     log(`[${name}]\nBruteforce init...`, true)
     let curList = 0
@@ -75,14 +73,6 @@ async function brutePasswordGPU() {
           log(`Password not found :(`, true)
           break
         }
-        var strbuf = new Uint8Array(inp.passwords, 0, 128)
-        if (MNEMONIC.length <= 128) {
-          strbuf.set(MNEMONIC)
-        } else {
-          // HMAC key compression
-          strbuf.set(new Uint8Array(await crypto.subtle.digest('SHA-512', MNEMONIC)))
-        }
-        bufUint32LESwap(strbuf, 0, 128)
         
         const start = performance.now()
         out = await inference({ WORKGROUP_SIZE, shaders: pipeline, inp: new Uint32Array(inp.passwords), count: batchSize })

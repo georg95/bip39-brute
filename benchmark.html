@@ -59,7 +59,8 @@ window.benchmark.onclick = async () => {
     window.benchmark.style.display = ''
 }
 async function runBenchmark(options) {
-    const passwords = 1024 * 32
+    const MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
+    const passwords = 1024 * 128
     const { name, clean, inference, buildShader, swapBuffers } =
         await webGPUinit({...options, BUF_SIZE: passwords*128 })
     log(`\n[${name}]\n`)
@@ -67,15 +68,13 @@ async function runBenchmark(options) {
     const start = performance.now()
     const WORKGROUP_SIZE = 64
     const pipeline = await buildEntirePipeline({
-        buildShader, swapBuffers, WORKGROUP_SIZE, hashList: [new Uint8Array([177, 43, 28, 233, 149, 227, 53, 96, 61, 16, 252, 249, 145, 96, 18, 221, 76, 56, 191, 22])],
+        MNEMONIC, buildShader, swapBuffers, WORKGROUP_SIZE, hashList: [new Uint8Array([177, 43, 28, 233, 149, 227, 53, 96, 61, 16, 252, 249, 145, 96, 18, 221, 76, 56, 191, 22])],
     })
     const PASSWORD = 'Abbie'
     const digits = passwords.toString(10).length
     const PASS_LEN = Math.ceil((PASSWORD.length + digits + 1) / 4) + 1
     const inp = new Uint32Array(32 + PASS_LEN * passwords).fill(0)
     var strbuf = new Uint8Array(inp.buffer, inp.byteOffset, inp.byteLength)
-    const MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
-    strbuf.set(new TextEncoder().encode(MNEMONIC))
 
     let passwordOffset = 128 + passwords * 4
     for (let i = 0; i < passwords; i++) {
@@ -84,10 +83,9 @@ async function runBenchmark(options) {
         inp[32 + i] = passwordOffset
         passwordOffset += curPass.length
     }
-    bufUint32LESwap(strbuf, 0, 128)
     
     log(`[${((performance.now() - start) / 1000).toFixed(1)}s]\n`)
-    for (let mode of ['pbkdf2', 'all']) {
+    for (let mode of ['all', 'pbkdf2']) {
         if (mode === 'pbkdf2') {
             log('\nPbkdf2-hmac-sha512:')
             shaders = [pipeline[0]]
@@ -97,7 +95,7 @@ async function runBenchmark(options) {
             shaders = pipeline
         }
         await new Promise(res => setTimeout(res, 100)) // flush text
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; i < 12; i++) {
             const batchSize = 64 * (2 ** i)
             let time = Infinity
             let out
@@ -114,7 +112,7 @@ async function runBenchmark(options) {
 
             log(`Batch: ${batchSize}, Speed: ${(batchSize / time) | 0} ops/s`);
 
-            if (time > 0.5) {
+            if (time > 1) {
                 break
             }
         }
