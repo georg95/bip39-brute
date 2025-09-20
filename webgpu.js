@@ -45,12 +45,11 @@ async function buildEntirePipeline({ addrType, MNEMONIC, WORKGROUP_SIZE, buildSh
         .replaceAll('CHECK_HASHES', hash160ToWGSLArray(hashList))
       shaders.push(await buildShader(keccakCode, 'main'))
     } else if (addrType === 'p2sh') {
-      assert(false, 'p2sh addresses not supported yet')
-      // let hash160Code = (await fetch('wgsl/hash160.wgsl').then(r => r.text()))
-      //   .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
-      //   .replaceAll('CHECK_COUNT', hashList.length.toString(10))
-      //   .replaceAll('CHECK_HASHES', hash160ToWGSLArray(hashList))
-      // shaders.push(await buildShader(hash160Code, 'p2sh'))
+      let hash160Code = (await fetch('wgsl/hash160.wgsl').then(r => r.text()))
+        .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
+        .replaceAll('CHECK_COUNT', hashList.length.toString(10))
+        .replaceAll('CHECK_HASHES', hash160ToWGSLArray(hashList))
+      shaders.push(await buildShader(hash160Code, 'p2sh'))
     } else {
       let hash160Code = (await fetch('wgsl/hash160.wgsl').then(r => r.text()))
         .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))

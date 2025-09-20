@@ -21,19 +21,7 @@ fn ch(e: u32, f: u32, g: u32) -> u32 { return (e & f) ^ ((~e) & g); }
 @group(0) @binding(0) var<storage, read> input: array<u32>;
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;
 
-fn sha256(out: ptr<function, array<u32, 8>>, offset: u32) {
-    var w = array<u32, 64>();
-    for (var i = 0u; i < 16u; i++) {w[i] = 0; }
-    w[0] = (input[offset + 16u] >> 8) | (((input[offset + 31u] & 1) + 2) << 24);
-    w[1] = (input[offset + 17u] >> 8) | (input[offset + 16u] << 24);
-    w[2] = (input[offset + 18u] >> 8) | (input[offset + 17u] << 24);
-    w[3] = (input[offset + 19u] >> 8) | (input[offset + 18u] << 24);
-    w[4] = (input[offset + 20u] >> 8) | (input[offset + 19u] << 24);
-    w[5] = (input[offset + 21u] >> 8) | (input[offset + 20u] << 24);
-    w[6] = (input[offset + 22u] >> 8) | (input[offset + 21u] << 24);
-    w[7] = (input[offset + 23u] >> 8) | (input[offset + 22u] << 24);
-    w[8] = (input[offset + 23u] << 24) | 0x800000;
-    w[15] = 33 * 8; // 33 bytes = 33 * 8 bits
+fn sha256(w: ptr<function, array<u32, 64>>, out: ptr<function, array<u32, 8>>) {
     for (var i = 16u; i < 64u; i++){
         w[i] = w[i - 16u] + g0(w[i - 15u]) + w[i - 7u] + g1(w[i - 2u]);
     }
@@ -192,24 +180,78 @@ const CHECK = array<array<u32, 5>, CHECK_COUNT>(
     CHECK_HASHES
 );
 
-@compute @workgroup_size(WORKGROUP_SIZE)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    if (gid.x == 0) {
-        output[0] = 0xffffffffu;
-    }
-    var out: array<u32, 8>;
-    sha256(&out, gid.x * 32u);
-    ripemd160(&out);
-    var found: u32 = 0;
+fn checkHash(out: ptr<function, array<u32, 8>>, gidX: u32) {
     for (var i = 0; i < CHECK_COUNT; i++) {
         if (out[0] == CHECK[i][0] &&
             out[1] == CHECK[i][1] &&
             out[2] == CHECK[i][2] &&
             out[3] == CHECK[i][3] &&
             out[4] == CHECK[i][4]) {
-            output[0] = gid.x;
+            output[0] = gidX;
         }
     }
-
-    
 }
+
+fn initSha256WithPublicKey(w: ptr<function, array<u32, 64>>, offset: u32) {
+    for (var i = 0u; i < 16u; i++) { w[i] = 0; }
+    //                                     pubkey prefix 0x02 or 0x03
+    w[0] = (input[offset + 16u] >> 8) | (((input[offset + 31u] & 1) + 2) << 24);
+    w[1] = (input[offset + 17u] >> 8) | (input[offset + 16u] << 24);
+    w[2] = (input[offset + 18u] >> 8) | (input[offset + 17u] << 24);
+    w[3] = (input[offset + 19u] >> 8) | (input[offset + 18u] << 24);
+    w[4] = (input[offset + 20u] >> 8) | (input[offset + 19u] << 24);
+    w[5] = (input[offset + 21u] >> 8) | (input[offset + 20u] << 24);
+    w[6] = (input[offset + 22u] >> 8) | (input[offset + 21u] << 24);
+    w[7] = (input[offset + 23u] >> 8) | (input[offset + 22u] << 24);
+    w[8] = (input[offset + 23u] << 24) | 0x800000;
+    w[15] = 33 * 8; // 33 bytes = 33 * 8 bits
+}
+
+@compute @workgroup_size(WORKGROUP_SIZE)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    if (gid.x == 0) { output[0] = 0xffffffffu; }
+    var out: array<u32, 8>;
+    var w: array<u32, 64>;
+
+    initSha256WithPublicKey(&w, gid.x * 32u);
+    sha256(&w, &out);
+    ripemd160(&out);
+
+    checkHash(&out, gid.x);
+}
+
+fn swap_bytes_u32(value: u32) -> u32 {
+    return ((value & 0x000000FFu) << 24u) |
+           ((value & 0x0000FF00u) << 8u)  |
+           ((value & 0x00FF0000u) >> 8u)  |
+           ((value & 0xFF000000u) >> 24u);
+}
+
+fn initSha256WithHash160(w: ptr<function, array<u32, 64>>, hash160: ptr<function, array<u32, 8>>) {
+    for (var i = 0u; i < 64u; i++) { w[i] = 0; }
+    w[0] = 0x00140000u | (swap_bytes_u32(hash160[0]) >> 16);
+    w[1] = (swap_bytes_u32(hash160[0]) << 16) | (swap_bytes_u32(hash160[1]) >> 16);
+    w[2] = (swap_bytes_u32(hash160[1]) << 16) | (swap_bytes_u32(hash160[2]) >> 16);
+    w[3] = (swap_bytes_u32(hash160[2]) << 16) | (swap_bytes_u32(hash160[3]) >> 16);
+    w[4] = (swap_bytes_u32(hash160[3]) << 16) | (swap_bytes_u32(hash160[4]) >> 16);
+    w[5] = (swap_bytes_u32(hash160[4]) << 16) | 0x8000u;
+    w[15] = 22 * 8; // 22 bytes = 2 * 8 bits
+}
+
+@compute @workgroup_size(WORKGROUP_SIZE)
+fn p2sh(@builtin(global_invocation_id) gid: vec3<u32>) {
+    if (gid.x == 0) { output[0] = 0xffffffffu; }
+    var out: array<u32, 8>;
+    var w: array<u32, 64>;
+
+    initSha256WithPublicKey(&w, gid.x * 32u);
+    sha256(&w, &out);
+    ripemd160(&out);
+
+    initSha256WithHash160(&w, &out);
+    sha256(&w, &out);
+    ripemd160(&out);
+
+    checkHash(&out, gid.x);
+}
+

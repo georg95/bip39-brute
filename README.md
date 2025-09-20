@@ -18,8 +18,8 @@ Password: gauffers (usernames.txt password list)
 ### TODO:
 
 - [x] Password bruteforce mode
+- [x] Legacy/P2SH/Segwit bitcoin addresses
 - [x] Ethereum/BSC/Tron wallets
-- [ ] P2SH bitcoin addresses
 - [ ] Multiple derivation addresses
 - [ ] Bruteforce settings
 - [ ] Missing words bruteforce mode
