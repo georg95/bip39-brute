@@ -50,9 +50,8 @@ async function brutePasswordGPU() {
     ]
     // PASSWORD_LISTS.sort((a, b) => a.filePasswords - b.filePasswords)
     const { bip39mask, addrHash160list, addrTypes } = await validateInput()
-    // TODO support other address types
     const pipeline = await buildEntirePipeline({
-        MNEMONIC: bip39mask, WORKGROUP_SIZE, buildShader, swapBuffers, hashList: addrHash160list
+        addrType: addrTypes[0], MNEMONIC: bip39mask, WORKGROUP_SIZE, buildShader, swapBuffers, hashList: addrHash160list
     })
     log(`[${name}]\nBruteforce init...`, true)
     let curList = 0
@@ -121,11 +120,11 @@ async function validateInput() {
   }
   const addrlist = window.addrlist.value.split('\n').map(x => x.trim()).filter(x => x)
   if (addrlist.length === 0) {
-    window.output.innerHTML = `Enter at least 1 address`;
+    window.output.innerHTML = `Enter at least 1 address\n`;
     result = false
   }
   const addrHash160list = []
-  const addrTypes = new Set()
+  let addrTypes = new Set()
   for (let addr of addrlist) {
     const { hash160, type } = await addrToScriptHash(addr) || {}
     if (hash160) {
@@ -135,6 +134,10 @@ async function validateInput() {
       window.output.innerHTML += `${addr} is invalid address\n`
       result = false
     }
+  }
+  addrTypes = Array.from(addrTypes)
+  if (addrTypes.length > 1) {
+    window.output.innerHTML += `WARNING! Multiple address types: ${addrTypes.join(', ')}\nOnly ${addrTypes[0]} will be used\n`;
   }
   return result && { bip39mask: words.join(' '), addrHash160list, addrTypes }
 }

@@ -18,9 +18,9 @@ Password: gauffers (usernames.txt password list)
 ### TODO:
 
 - [x] Password bruteforce mode
-- [ ] Multiple derivation addresses
+- [x] Ethereum/BSC/Tron wallets
 - [ ] P2SH bitcoin addresses
+- [ ] Multiple derivation addresses
 - [ ] Bruteforce settings
-- [ ] Ethereum/BSC wallets
 - [ ] Missing words bruteforce mode
 - [ ] WebGPU backend

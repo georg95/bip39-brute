@@ -1,25 +1,34 @@
-async function buildEntirePipeline({ MNEMONIC, WORKGROUP_SIZE, buildShader, swapBuffers, hashList }) {
+const ADDRTYPEMAP = {
+  'p2wphk': [84, 0],
+  'p2pkh': [44, 0],
+  'p2sh': [49, 0],
+  'eth': [44, 60],
+  'tron': [44, 195],
+}
+async function buildEntirePipeline({ addrType, MNEMONIC, WORKGROUP_SIZE, buildShader, swapBuffers, hashList }) {
+    assert(addrType && ADDRTYPEMAP[addrType] && MNEMONIC && WORKGROUP_SIZE && buildShader && swapBuffers && hashList)
+    const [NETWORK, COIN_TYPE] = ADDRTYPEMAP[addrType]
     let shaders = []
     let pbkdf2Code = (await fetch('wgsl/pbkdf2_template.wgsl').then(r => r.text()))
     pbkdf2Code = (await unrolledSha512_wgpu(pbkdf2Code, MNEMONIC))
         .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
     // unrolled code
     // console.log(pbkdf2Code)
-    let deriveCode = (await fetch('wgsl/derive_coin.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
-    let secp256k1Code = (await fetch('wgsl/secp256k1.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
-    let hash160Code = (await fetch('wgsl/hash160.wgsl').then(r => r.text()))
+    let deriveCode = (await fetch('wgsl/derive_coin.wgsl').then(r => r.text()))
         .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
-        .replaceAll('CHECK_COUNT', hashList.length.toString(10))
-        .replaceAll('CHECK_HASHES', hash160ToWGSLArray(hashList))
+        .replaceAll('NETWORK', NETWORK)
+        .replaceAll('COIN_TYPE', COIN_TYPE)
+    let secp256k1Code = (await fetch('wgsl/secp256k1.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
+
     
     shaders.push(await buildShader(pbkdf2Code, 'main'))
     swapBuffers()
-    shaders.push(await buildShader(deriveCode, 'derive1'))
+    shaders.push(await buildShader(deriveCode, 'deriveCoin'))
     swapBuffers()
     const secp256k1Shader = await buildShader(secp256k1Code, 'main')
     shaders.push(secp256k1Shader)
     swapBuffers()
-    const derive2Shader = await buildShader(deriveCode, 'derive2', WORKGROUP_SIZE)
+    const derive2Shader = await buildShader(deriveCode, 'deriveAddr')
     shaders.push(derive2Shader)
     swapBuffers()
     shaders.push(secp256k1Shader)
@@ -28,7 +37,28 @@ async function buildEntirePipeline({ MNEMONIC, WORKGROUP_SIZE, buildShader, swap
     swapBuffers()
     shaders.push(secp256k1Shader)
     swapBuffers()
-    shaders.push(await buildShader(hash160Code, 'main', WORKGROUP_SIZE))
+
+    if (addrType === 'eth' || addrType === 'tron') {
+      let keccakCode = (await fetch('wgsl/keccak256.wgsl').then(r => r.text()))
+        .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
+        .replaceAll('CHECK_COUNT', hashList.length.toString(10))
+        .replaceAll('CHECK_HASHES', hash160ToWGSLArray(hashList))
+      shaders.push(await buildShader(keccakCode, 'main'))
+    } else if (addrType === 'p2sh') {
+      assert(false, 'p2sh addresses not supported yet')
+      // let hash160Code = (await fetch('wgsl/hash160.wgsl').then(r => r.text()))
+      //   .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
+      //   .replaceAll('CHECK_COUNT', hashList.length.toString(10))
+      //   .replaceAll('CHECK_HASHES', hash160ToWGSLArray(hashList))
+      // shaders.push(await buildShader(hash160Code, 'p2sh'))
+    } else {
+      let hash160Code = (await fetch('wgsl/hash160.wgsl').then(r => r.text()))
+        .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
+        .replaceAll('CHECK_COUNT', hashList.length.toString(10))
+        .replaceAll('CHECK_HASHES', hash160ToWGSLArray(hashList))
+      shaders.push(await buildShader(hash160Code, 'main'))
+    }
+
     return shaders
 }
 

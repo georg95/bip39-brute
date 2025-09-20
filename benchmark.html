@@ -49,17 +49,18 @@ window.benchmark.onclick = async () => {
     const device1 = await adapter1.requestDevice()
     await runBenchmark({ device: device1, adapter: adapter1 })
 
-    const adapter2 = await navigator.gpu.requestAdapter({ powerPreference: "low-power" })
-    const device2 = await adapter2.requestDevice()
-    if (adapter1.info.device !== adapter2.info.device || adapter1.info.description !== adapter2.info.description) {
-        window.output.innerHTML += '\n'
-        await runBenchmark({ device: device2, adapter: adapter2 })
-    }
+    // const adapter2 = await navigator.gpu.requestAdapter({ powerPreference: "low-power" })
+    // const device2 = await adapter2.requestDevice()
+    // if (adapter1.info.device !== adapter2.info.device || adapter1.info.description !== adapter2.info.description) {
+    //     window.output.innerHTML += '\n'
+    //     await runBenchmark({ device: device2, adapter: adapter2 })
+    // }
     log('\n✅ DONE')
     window.benchmark.style.display = ''
 }
+
 async function runBenchmark(options) {
-    const MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
+    const MNEMONIC = 'expose census trophy review common rebel ask depend build caught frame accident naive shiver inmate host assault fan tonight accident left useful tongue blood'
     const passwords = 1024 * 128
     const { name, clean, inference, buildShader, swapBuffers } =
         await webGPUinit({...options, BUF_SIZE: passwords*128 })
@@ -68,9 +69,10 @@ async function runBenchmark(options) {
     const start = performance.now()
     const WORKGROUP_SIZE = 64
     const pipeline = await buildEntirePipeline({
-        MNEMONIC, buildShader, swapBuffers, WORKGROUP_SIZE, hashList: [new Uint8Array([177, 43, 28, 233, 149, 227, 53, 96, 61, 16, 252, 249, 145, 96, 18, 221, 76, 56, 191, 22])],
+        addrType: 'eth', MNEMONIC, buildShader, swapBuffers, WORKGROUP_SIZE,
+        hashList: [hexToUint8Array('9f592002A9216B5eB3B00040df6a9EaE4792A0De')],
     })
-    const PASSWORD = 'Abbie'
+    const PASSWORD = 'gauffers'
     const digits = passwords.toString(10).length
     const PASS_LEN = Math.ceil((PASSWORD.length + digits + 1) / 4) + 1
     const inp = new Uint32Array(32 + PASS_LEN * passwords).fill(0)
@@ -118,6 +120,16 @@ async function runBenchmark(options) {
         }
     }
     clean()
+}
+function hexToUint8Array(hexString) {
+    const bytes = [];
+    for (let i = 0; i < hexString.length; i += 2) {
+        bytes.push(parseInt(hexString.substr(i, 2), 16));
+    }
+    return new Uint8Array(bytes);
+}
+function u32arrToHex(u32arr) {
+return Array.from(u32arr).map(x => x.toString(16).padStart(8,'0')).join('');
 }
 </script>
 </html>

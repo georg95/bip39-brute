@@ -201,7 +201,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     sha256(&out, gid.x * 32u);
     ripemd160(&out);
     var found: u32 = 0;
-    for (var i = 0; i < 1; i++) {
+    for (var i = 0; i < CHECK_COUNT; i++) {
         if (out[0] == CHECK[i][0] &&
             out[1] == CHECK[i][1] &&
             out[2] == CHECK[i][2] &&
