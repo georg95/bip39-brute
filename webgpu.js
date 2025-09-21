@@ -20,7 +20,6 @@ async function buildEntirePipeline({ addrType, MNEMONIC, WORKGROUP_SIZE, buildSh
         .replaceAll('COIN_TYPE', COIN_TYPE)
     let secp256k1Code = (await fetch('wgsl/secp256k1.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
 
-    
     shaders.push(await buildShader(pbkdf2Code, 'main'))
     swapBuffers()
     shaders.push(await buildShader(deriveCode, 'deriveCoin'))
@@ -119,22 +118,19 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
         device.destroy()
     }
 
-    const inpBuffer = buffers.inp
-    let outBuffer = buffers.out
-
     async function inference({ WORKGROUP_SIZE, shaders, inp, count }) {
         assert(WORKGROUP_SIZE, `expected WORKGROUP_SIZE, got ${inp?.length}`)
         assert(inp?.length <= BUF_SIZE / 4, `expected input size to be <= ${BUF_SIZE / 4}, got ${inp?.length}`)
-        device.queue.writeBuffer(inpBuffer, 0, inp)
+        device.queue.writeBuffer(shaders[0].bufferIn, 0, inp)
         const commandEncoder = device.createCommandEncoder()
         const passEncoder = commandEncoder.beginComputePass()
-        for(let { bindGroup, pipeline } of shaders) {
-            passEncoder.setBindGroup(0, bindGroup)
+        for(let { binding, pipeline } of shaders) {
+            passEncoder.setBindGroup(0, binding)
             passEncoder.setPipeline(pipeline)
             passEncoder.dispatchWorkgroups(Math.ceil(count / WORKGROUP_SIZE))
         }
         passEncoder.end()
-        commandEncoder.copyBufferToBuffer(outBuffer, 0, stagingBuffer, 0, 1024)
+        commandEncoder.copyBufferToBuffer(shaders[shaders.length - 1].bufferOut, 0, stagingBuffer, 0, 1024)
         device.queue.submit([commandEncoder.finish()])
         await stagingBuffer.mapAsync(GPUMapMode.READ, 0, 1024)
         const copyArrayBuffer = stagingBuffer.getMappedRange(0, 1024)
@@ -162,33 +158,41 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
             },
         ],
     });
-    const bindGroup1 = device.createBindGroup({
-        layout: bindGroupLayout,
-        entries: [{
-            binding: 0,
-            resource: { buffer: buffers.inp },
-        }, {
-            binding: 1,
-            resource: { buffer: buffers.out },
-        }, {
-            binding: 2,
-            resource: { buffer: secp256k1PrecomputeBuffer },
-        }],
-    })
+    const bindGroup1 = {
+      binding: device.createBindGroup({
+          layout: bindGroupLayout,
+          entries: [{
+              binding: 0,
+              resource: { buffer: buffers.inp },
+          }, {
+              binding: 1,
+              resource: { buffer: buffers.out },
+          }, {
+              binding: 2,
+              resource: { buffer: secp256k1PrecomputeBuffer },
+          }],
+      }),
+      bufferIn: buffers.inp,
+      bufferOut: buffers.out,
+    }
 
-    const bindGroup2 = device.createBindGroup({
-        layout: bindGroupLayout,
-        entries: [{
-            binding: 0,
-            resource: { buffer: buffers.out },
-        }, {
-            binding: 1,
-            resource: { buffer: buffers.inp },
-        }, {
-            binding: 2,
-            resource: { buffer: secp256k1PrecomputeBuffer },
-        }],
-    })
+    const bindGroup2 = {
+      binding: device.createBindGroup({
+          layout: bindGroupLayout,
+          entries: [{
+              binding: 0,
+              resource: { buffer: buffers.out },
+          }, {
+              binding: 1,
+              resource: { buffer: buffers.inp },
+          }, {
+              binding: 2,
+              resource: { buffer: secp256k1PrecomputeBuffer },
+          }],
+      }),
+      bufferIn: buffers.out,
+      bufferOut: buffers.inp,
+    }
 
     let bindGroup = bindGroup1
 
@@ -212,7 +216,7 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
         console.error(e)
         log(`Pipeline creation error: ${e.message}`)
       }
-      return { bindGroup, pipeline }
+      return { ...bindGroup, pipeline }
     }
 
     return {
