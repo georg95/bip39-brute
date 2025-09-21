@@ -20,14 +20,22 @@ async function buildEntirePipeline({ addrType, MNEMONIC, WORKGROUP_SIZE, buildSh
         .replaceAll('COIN_TYPE', COIN_TYPE)
     let secp256k1Code = (await fetch('wgsl/secp256k1.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
 
+    console.time('[COMPILE] pbkdf2');
     shaders.push(await buildShader(pbkdf2Code, 'main'))
+    console.timeEnd('[COMPILE] pbkdf2');
     swapBuffers()
+    console.time('[COMPILE] deriveCoin');
     shaders.push(await buildShader(deriveCode, 'deriveCoin'))
+    console.timeEnd('[COMPILE] deriveCoin');
     swapBuffers()
+    console.time('[COMPILE] secp256k1');
     const secp256k1Shader = await buildShader(secp256k1Code, 'main')
+    console.timeEnd('[COMPILE] secp256k1');
     shaders.push(secp256k1Shader)
     swapBuffers()
+    console.time('[COMPILE] deriveAddr');
     const derive2Shader = await buildShader(deriveCode, 'deriveAddr')
+    console.timeEnd('[COMPILE] deriveAddr');
     shaders.push(derive2Shader)
     swapBuffers()
     shaders.push(secp256k1Shader)
@@ -37,6 +45,8 @@ async function buildEntirePipeline({ addrType, MNEMONIC, WORKGROUP_SIZE, buildSh
     shaders.push(secp256k1Shader)
     swapBuffers()
 
+
+    console.time('[COMPILE] keccak/hash160');
     if (addrType === 'eth' || addrType === 'tron') {
       let keccakCode = (await fetch('wgsl/keccak256.wgsl').then(r => r.text()))
         .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
@@ -57,6 +67,7 @@ async function buildEntirePipeline({ addrType, MNEMONIC, WORKGROUP_SIZE, buildSh
       shaders.push(await buildShader(hash160Code, 'main'))
     }
 
+    console.timeEnd('[COMPILE] keccak/hash160');
     return shaders
 }
 

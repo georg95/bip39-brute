@@ -256,16 +256,121 @@ fn mmul(a: ptr<function, array<u32, 10>>, b: ptr<function, array<u32, 10>>) {
   a[2] = d.lo;
 }
 
+fn msqr2(a: ptr<function, array<u32, 10>>) {
+  let M = 0x3FFFFFFu;
+  let R0 = 0x3D10u;
+  let R1 = 0x400u;
 
-fn msqr(r: ptr<function, array<u32, 10>>, a: ptr<function, array<u32, 10>>) {
-  // TODO port faster version
-  mmul2(r, a, a);
-}
-fn msqr2(r: ptr<function, array<u32, 10>>) {
-  // TODO port faster version
-  var a: array<u32, 10>;
-  copy(&a, r);
-  mmul2(r, &a, &a);
+  var d = u64(0, 0);
+  d = muladd64(d, a[0]*2, a[9]);
+  d = muladd64(d, a[1]*2, a[8]);
+  d = muladd64(d, a[2]*2, a[7]);
+  d = muladd64(d, a[3]*2, a[6]);
+  d = muladd64(d, a[4]*2, a[5]);
+
+  var t9 = d.lo & M; d = shr64_26(d);
+
+  var c = mul64(a[0], a[0]);
+  d = muladd64(d, a[1]*2, a[9]);
+  d = muladd64(d, a[2]*2, a[8]);
+  d = muladd64(d, a[3]*2, a[7]);
+  d = muladd64(d, a[4]*2, a[6]);
+  d = muladd64(d, a[5], a[5]);
+
+  var u0 = d.lo & M; d = shr64_26(d); c = muladd64(c, u0, R0);
+  var t0 = c.lo & M; c = shr64_26(c); c = muladd64(c, u0, R1);
+
+  c = muladd64(c, a[0]*2, a[1]);
+  d = muladd64(d, a[2]*2, a[9]);
+  d = muladd64(d, a[3]*2, a[8]);
+  d = muladd64(d, a[4]*2, a[7]);
+  d = muladd64(d, a[5]*2, a[6]);
+
+  var u1 = d.lo & M; d = shr64_26(d); c = muladd64(c, u1, R0);
+  var t1 = c.lo & M; c = shr64_26(c); c = muladd64(c, u1, R1);
+
+  c = muladd64(c, a[0]*2, a[2]);
+  c = muladd64(c, a[1], a[1]);
+  d = muladd64(d, a[3]*2, a[9]);
+  d = muladd64(d, a[4]*2, a[8]);
+  d = muladd64(d, a[5]*2, a[7]);
+  d = muladd64(d, a[6], a[6]);
+
+  var u2 = d.lo & M; d = shr64_26(d); c = muladd64(c, u2, R0);
+  var t2 = c.lo & M; c = shr64_26(c); c = muladd64(c, u2, R1);
+
+  c = muladd64(c, a[0]*2, a[3]);
+  c = muladd64(c, a[1]*2, a[2]);
+  d = muladd64(d, a[4]*2, a[9]);
+  d = muladd64(d, a[5]*2, a[8]);
+  d = muladd64(d, a[6]*2, a[7]);
+
+  var u3 = d.lo & M; d = shr64_26(d); c = muladd64(c, u3, R0);
+  var t3 = c.lo & M; c = shr64_26(c); c = muladd64(c, u3, R1);
+
+  c = muladd64(c, a[0]*2, a[4]);
+  c = muladd64(c, a[1]*2, a[3]);
+  c = muladd64(c, a[2], a[2]);
+  d = muladd64(d, a[5]*2, a[9]);
+  d = muladd64(d, a[6]*2, a[8]);
+  d = muladd64(d, a[7], a[7]);
+
+  var u4 = d.lo & M; d = shr64_26(d); c = muladd64(c, u4, R0);
+  var t4 = c.lo & M; c = shr64_26(c); c = muladd64(c, u4, R1);
+
+  c = muladd64(c, a[0]*2, a[5]);
+  c = muladd64(c, a[1]*2, a[4]);
+  c = muladd64(c, a[2]*2, a[3]);
+  d = muladd64(d, a[6]*2, a[9]);
+  d = muladd64(d, a[7]*2, a[8]);
+
+  var u5 = d.lo & M; d = shr64_26(d); c = muladd64(c, u5, R0);
+  var t5 = c.lo & M; c = shr64_26(c); c = muladd64(c, u5, R1);
+
+  c = muladd64(c, a[0]*2, a[6]);
+  c = muladd64(c, a[1]*2, a[5]);
+  c = muladd64(c, a[2]*2, a[4]);
+  c = muladd64(c, a[3], a[3]);
+  d = muladd64(d, a[7]*2, a[9]);
+  d = muladd64(d, a[8], a[8]);
+
+  var u6 = d.lo & M; d = shr64_26(d); c = muladd64(c, u6, R0);
+  var t6 = c.lo & M; c = shr64_26(c); c = muladd64(c, u6, R1);
+
+  c = muladd64(c, a[0]*2, a[7]);
+  c = muladd64(c, a[1]*2, a[6]);
+  c = muladd64(c, a[2]*2, a[5]);
+  c = muladd64(c, a[3]*2, a[4]);
+  d = muladd64(d, a[8]*2, a[9]);
+
+  var u7 = d.lo & M; d = shr64_26(d); c = muladd64(c, u7, R0);
+  var t7 = c.lo & M; c = shr64_26(c); c = muladd64(c, u7, R1);
+
+  c = muladd64(c, a[0]*2, a[8]);
+  c = muladd64(c, a[1]*2, a[7]);
+  c = muladd64(c, a[2]*2, a[6]);
+  c = muladd64(c, a[3]*2, a[5]);
+  c = muladd64(c, a[4], a[4]);
+  d = muladd64(d, a[9], a[9]);
+
+  var u8 = d.lo & M; d = shr64_26(d); c = muladd64(c, u8, R0);
+
+  a[3] = t3;
+  a[4] = t4;
+  a[5] = t5;
+  a[6] = t6;
+  a[7] = t7;
+  a[8] = c.lo & M; c = shr64_26(c); c = muladd64(c, u8, R1);
+
+  c = add64(u64(0, t9), add64(c, mul64_c(d, R0)));
+  a[9] = c.lo & (M >> 4);
+  c = shr64_22(c); c = add64(c, mul64_c(d, R1 << 4));
+  d = add64(mul64_c(c, R0 >> 4), u64(0, t0));
+  a[0] = d.lo & M; d = shr64_26(d);
+  d = add64(d, add64(mul64_c(c, R1 >> 4), u64(0, t1)));
+  a[1] = d.lo & M; d = shr64_26(d);
+  d = add64(d, u64(0, t2));
+  a[2] = d.lo;
 }
 
 fn madd(r: ptr<function, array<u32, 10>>, a: ptr<function, array<u32, 10>>) {
@@ -434,16 +539,17 @@ fn secp256k1_add(r: ptr<function, normalPoint>, a: ptr<function, normalPoint>, b
     var tmp: array<u32, 10>;
     var degenerate: bool;
 
-    msqr(&zz, &a.z);
+    copy(&zz, &a.z);
+    msqr2(&zz);
     copy(&u1, &a.x);
     mmul2(&u2, &b.x, &zz);
     copy(&s1, &a.y);
     mmul2(&s2, &b.y, &zz);
-    copy(&tmp, &s2);
-    mmul2(&s2, &tmp, &a.z);
+    mmul(&s2, &a.z);
     copy(&t, &u1); madd(&t, &u2);
     copy(&m, &s1); madd(&m, &s2);
-    msqr(&rr, &t);
+    copy(&rr, &t);
+    msqr2(&rr);
     mnegate(&m_alt, &u2, 1);
     mmul2(&tt, &u1, &m_alt);
     madd(&rr, &tt);
@@ -453,21 +559,20 @@ fn secp256k1_add(r: ptr<function, normalPoint>, a: ptr<function, normalPoint>, b
     madd(&m_alt, &u1);
     if (!degenerate) { copy(&rr_alt, &rr); }
     if (!degenerate) { copy(&m_alt, &m); }
-    msqr(&n, &m_alt);
+    copy(&n, &m_alt);
+    msqr2(&n);
     mnegate(&q, &t, 5);
-    copy(&tmp, &q);
-    mmul2(&q, &tmp, &n);
-    copy(&tmp, &n);
-    msqr(&n, &tmp);
+    mmul(&q, &n);
+    msqr2(&n);
     if (degenerate) { copy(&n, &m); }
-    msqr(&t, &rr_alt);
+    copy(&t, &rr_alt);
+    msqr2(&t);
     mmul2(&r.z, &a.z, &m_alt);
     madd(&t, &q);
     copy(&r.x, &t);
     mmulint(&t, 2);
     madd(&t, &q);
-    copy(&tmp, &t);
-    mmul2(&t, &tmp, &rr_alt);
+    mmul(&t, &rr_alt);
     madd(&t, &n);
     mnegate(&r.y, &t, 6);
     mhalf(&r.y);
@@ -492,9 +597,11 @@ fn minv(r: ptr<function, array<u32, 10>>) {
     var x223: array<u32, 10>;
     var t1: array<u32, 10>;
 
-    msqr(&x2, r);
+    copy(&x2, r);
+    msqr2(&x2);
     mmul(&x2, r);
-    msqr(&x3, &x2);
+    copy(&x3, &x2);
+    msqr2(&x3);
     mmul(&x3, r);
 
     copy(&x6, &x3);
@@ -551,7 +658,8 @@ fn toAffine(r: ptr<function, affinePoint>, a: ptr<function, normalPoint>) {
     var z2: array<u32, 10>;
     var z3: array<u32, 10>;
     minv(&a.z);
-    msqr(&z2, &a.z);
+    copy(&z2, &a.z);
+    msqr2(&z2);
     mmul2(&z3, &a.z, &z2);
     mmul2(&r.x, &a.x, &z2);
     mmul2(&r.y, &a.y, &z3);
