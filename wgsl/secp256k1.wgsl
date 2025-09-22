@@ -669,15 +669,15 @@ fn secp256k1_mul(gidX: u32) -> normalPoint {
 
   var privKey: array<u32, 8>;
   for (var i: u32 = 0; i < 8; i++) { privKey[i] = input[gidX * 16u + 7u - i]; }
-  let mask: u32 = 0xffu;
+  let mask: u32 = 0xffffu;
   var carry: u32 = 0u;
-  for (var w = 0u; w < 32; w++) {
-    let index: u32 = w / 4u;
-    let part = w%4u;
-    var wbits: i32 = i32(((privKey[index] >> (part * 8u)) & mask) + carry);
-    if (wbits > 128) { wbits -= 256; carry = 1u; }
+  for (var w = 0u; w < 16; w++) {
+    let index: u32 = w / 2u;
+    let part = w%2u;
+    var wbits: i32 = i32(((privKey[index] >> (part * 16u)) & mask) + carry);
+    if (wbits > 32768) { wbits -= 65536; carry = 1u; }
     else { carry = 0; }
-    let off = w * 128u;
+    let off = w * 32768u;
     if (wbits != 0) {
       let offP: u32 = off + u32(abs(wbits)) - 1;
       loadCompPt(&ptA, offP);

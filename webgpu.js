@@ -366,7 +366,7 @@ async function prepareCompute() {
       }
     }
 
-    const PRECOMPUTE_WINDOW = 8
+    const PRECOMPUTE_WINDOW = 16
     const PRECOMPUTE_SIZE = 2 ** (PRECOMPUTE_WINDOW - 1) * (Math.ceil(256 / PRECOMPUTE_WINDOW)) * 64
     const precomputeTable = new Uint32Array(PRECOMPUTE_SIZE / 4).fill(0)
     precomputeSecp256k1Table(PRECOMPUTE_WINDOW, (batch, i) => {
