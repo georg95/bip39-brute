@@ -89,7 +89,7 @@ const MNEMONIC_SEED_5 = '53ae6afed8bd85ad9b5603e14ac8e4930c900c3e97c94c6a3d74a6e
 
 async function runBenchmark(options) {
     const MNEMONIC = 'expose census trophy review common rebel ask depend build caught frame accident naive shiver inmate host assault fan tonight accident left useful tongue blood'
-    const passwords = 1024 * 64
+    const passwords = 1024 * 128
     const { name, clean, inference, buildShader, swapBuffers } =
         await webGPUinit({...options, BUF_SIZE: passwords*128 })
     log(`\n[${name}]\n`)
@@ -112,7 +112,7 @@ async function runBenchmark(options) {
         clean()
         failed = true
     }
-    for (let mode of ['secp256k1']) {
+    for (let mode of ['secp256k1', 'pbkdf2', 'all']) {
         if (mode === 'secp256k1') {
             log('\nSecp256k1:')
             shaders = [pipeline[2]]
@@ -131,13 +131,13 @@ async function runBenchmark(options) {
 
 
         await new Promise(res => setTimeout(res, 100)) // flush text
-        for (let i = 0; i < 11; i++) {
+        for (let i = 0; i < 12; i++) {
             const batchSize = 64 * (2 ** i)
             let time = Infinity
             let out
             for (let x = 0; x < 3; x++) {
                 const start = performance.now()
-                out = await inference({ WORKGROUP_SIZE, shaders, inp, count: batchSize })
+                out = await inference({ shaders, inp, count: batchSize })
                 time = Math.min(time, (performance.now() - start) / 1000)
             }
             if (mode === 'pbkdf2' && (u32arrToHex(out.slice(0, 16)) !== MNEMONIC_SEED_0 || u32arrToHex(out.slice(80, 96)) !== MNEMONIC_SEED_5)) {

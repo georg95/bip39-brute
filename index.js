@@ -74,7 +74,7 @@ async function brutePasswordGPU() {
         }
         
         const start = performance.now()
-        out = await inference({ WORKGROUP_SIZE, shaders: pipeline, inp: new Uint32Array(inp.passwords), count: batchSize })
+        out = await inference({ shaders: pipeline, inp: new Uint32Array(inp.passwords), count: batchSize })
         const time = (performance.now() - start) / 1000
         const speed = batchSize / time | 0
         processedPasswords += inp.count

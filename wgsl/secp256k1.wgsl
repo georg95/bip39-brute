@@ -654,22 +654,7 @@ fn loadCompPt(p: ptr<function, affinePoint>, index: u32) {
   load26x10(&tmp, &p.y);
 }
 
-fn toAffine(r: ptr<function, affinePoint>, a: ptr<function, normalPoint>) {
-    var z2: array<u32, 10>;
-    var z3: array<u32, 10>;
-    minv(&a.z);
-    copy(&z2, &a.z);
-    msqr2(&z2);
-    mmul2(&z3, &a.z, &z2);
-    mmul2(&r.x, &a.x, &z2);
-    mmul2(&r.y, &a.y, &z3);
-}
-
-@group(0) @binding(0) var<storage, read> input: array<u32>;
-@group(0) @binding(1) var<storage, read_write> output: array<u32>;
-@group(0) @binding(2) var<storage, read> prec_table: array<u32>;
-@compute @workgroup_size(WORKGROUP_SIZE)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+fn secp256k1_mul(gidX: u32) -> normalPoint {
   var G256x: array<u32, 8> = array<u32, 8>(0xeb9a9787, 0x92f76cc4, 0x59599680, 0x89bdde81, 0xbbd3788d, 0x74669716, 0xef5ba060, 0xdd3625fa);         
   var G256y: array<u32, 8> = array<u32, 8>(0xc644a573, 0x37f68d00, 0x28833959, 0x94146198, 0x045731ca, 0x61da2501, 0x520e30d4, 0x7a188fa3);
   var G256x10: array<u32, 10>; var G256y10: array<u32, 10>;
@@ -683,7 +668,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   set0pt(&ptTmp);
 
   var privKey: array<u32, 8>;
-  for (var i: u32 = 0; i < 8; i++) { privKey[i] = input[gid.x * 16u + 7u - i]; }
+  for (var i: u32 = 0; i < 8; i++) { privKey[i] = input[gidX * 16u + 7u - i]; }
   let mask: u32 = 0xffu;
   var carry: u32 = 0u;
   for (var w = 0u; w < 32; w++) {
@@ -705,9 +690,61 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     secp256k1_add(&ptTmp, &p, &G256);
     p = ptTmp;
   }
-  toAffine(&ptA, &p);
 
-  for (var i: u32 = 0; i < 16; i++) { output[gid.x * 32u + i] = input[gid.x * 16u + i]; }
-  store26x10(&ptA.x, gid.x * 32u + 16u);
-  store26x10(&ptA.y, gid.x * 32u + 24u);
+  return p;
+}
+
+fn toAffineBatch(
+  ptA: ptr<function, array<affinePoint, 8>>,
+  p: ptr<function, array<normalPoint, 8>>) {
+    var acc: array<u32, 10>;
+    set1(&acc);
+    var scratch: array<array<u32, 10>, 9>;
+    copy(&scratch[0], &acc);
+
+    for (var i = 0; i < 8; i++) {
+      mmul(&acc, &p[i].z);
+      copy(&scratch[i+1], &acc);
+    }
+
+    minv(&acc);
+
+    var zinv: array<u32, 10>;
+    var z2: array<u32, 10>;
+    var z3: array<u32, 10>;
+    for (var i = 7; i >= 0; i--) {
+      mmul2(&zinv, &scratch[i], &acc);
+      mmul(&acc, &p[i].z);
+      copy(&z2, &zinv);
+      msqr2(&z2);
+      mmul2(&z3, &zinv, &z2);
+      mmul2(&ptA[i].x, &p[i].x, &z2);
+      mmul2(&ptA[i].y, &p[i].y, &z3);
+    }
+}
+
+fn storePt(gidX: u32, ptA: ptr<function, affinePoint>) {
+  for (var i: u32 = 0; i < 16; i++) { output[gidX * 32u + i] = input[gidX * 16u + i]; }
+  store26x10(&ptA.x, gidX * 32u + 16u);
+  store26x10(&ptA.y, gidX * 32u + 24u);
+}
+
+@group(0) @binding(0) var<storage, read> input: array<u32>;
+@group(0) @binding(1) var<storage, read_write> output: array<u32>;
+@group(0) @binding(2) var<storage, read> prec_table: array<u32>;
+
+@compute @workgroup_size(WORKGROUP_SIZE)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  var p: array<normalPoint, 8>;
+  var ptA: array<affinePoint, 8>;
+
+  for (var i = 0u; i < 8u; i++) {
+    p[i] = secp256k1_mul(gid.x*8 + i);
+  }
+
+  toAffineBatch(&ptA, &p);
+
+  for (var i = 0u; i < 8u; i++) {
+    storePt(gid.x*8+i, &ptA[i]);
+  }
 }

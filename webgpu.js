@@ -21,20 +21,20 @@ async function buildEntirePipeline({ addrType, MNEMONIC, WORKGROUP_SIZE, buildSh
     let secp256k1Code = (await fetch('wgsl/secp256k1.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
 
     console.time('[COMPILE] pbkdf2');
-    shaders.push(await buildShader(pbkdf2Code, 'main'))
+    shaders.push(await buildShader(pbkdf2Code, 'main', WORKGROUP_SIZE))
     console.timeEnd('[COMPILE] pbkdf2');
     swapBuffers()
     console.time('[COMPILE] deriveCoin');
-    shaders.push(await buildShader(deriveCode, 'deriveCoin'))
+    shaders.push(await buildShader(deriveCode, 'deriveCoin', WORKGROUP_SIZE))
     console.timeEnd('[COMPILE] deriveCoin');
     swapBuffers()
     console.time('[COMPILE] secp256k1');
-    const secp256k1Shader = await buildShader(secp256k1Code, 'main')
+    const secp256k1Shader = await buildShader(secp256k1Code, 'main', WORKGROUP_SIZE * 8)
     console.timeEnd('[COMPILE] secp256k1');
     shaders.push(secp256k1Shader)
     swapBuffers()
     console.time('[COMPILE] deriveAddr');
-    const derive2Shader = await buildShader(deriveCode, 'deriveAddr')
+    const derive2Shader = await buildShader(deriveCode, 'deriveAddr', WORKGROUP_SIZE)
     console.timeEnd('[COMPILE] deriveAddr');
     shaders.push(derive2Shader)
     swapBuffers()
@@ -52,19 +52,19 @@ async function buildEntirePipeline({ addrType, MNEMONIC, WORKGROUP_SIZE, buildSh
         .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
         .replaceAll('CHECK_COUNT', hashList.length.toString(10))
         .replaceAll('CHECK_HASHES', hash160ToWGSLArray(hashList))
-      shaders.push(await buildShader(keccakCode, 'main'))
+      shaders.push(await buildShader(keccakCode, 'main', WORKGROUP_SIZE))
     } else if (addrType === 'p2sh') {
       let hash160Code = (await fetch('wgsl/hash160.wgsl').then(r => r.text()))
         .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
         .replaceAll('CHECK_COUNT', hashList.length.toString(10))
         .replaceAll('CHECK_HASHES', hash160ToWGSLArray(hashList))
-      shaders.push(await buildShader(hash160Code, 'p2sh'))
+      shaders.push(await buildShader(hash160Code, 'p2sh', WORKGROUP_SIZE))
     } else {
       let hash160Code = (await fetch('wgsl/hash160.wgsl').then(r => r.text()))
         .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
         .replaceAll('CHECK_COUNT', hashList.length.toString(10))
         .replaceAll('CHECK_HASHES', hash160ToWGSLArray(hashList))
-      shaders.push(await buildShader(hash160Code, 'main'))
+      shaders.push(await buildShader(hash160Code, 'main', WORKGROUP_SIZE))
     }
 
     console.timeEnd('[COMPILE] keccak/hash160');
@@ -129,16 +129,15 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
         device.destroy()
     }
 
-    async function inference({ WORKGROUP_SIZE, shaders, inp, count }) {
-        assert(WORKGROUP_SIZE, `expected WORKGROUP_SIZE, got ${inp?.length}`)
+    async function inference({ shaders, inp, count }) {
         assert(inp?.length <= BUF_SIZE / 4, `expected input size to be <= ${BUF_SIZE / 4}, got ${inp?.length}`)
         device.queue.writeBuffer(shaders[0].bufferIn, 0, inp)
         const commandEncoder = device.createCommandEncoder()
         const passEncoder = commandEncoder.beginComputePass()
-        for(let { binding, pipeline } of shaders) {
+        for(let { binding, pipeline, workPerWarp } of shaders) {
             passEncoder.setBindGroup(0, binding)
             passEncoder.setPipeline(pipeline)
-            passEncoder.dispatchWorkgroups(Math.ceil(count / WORKGROUP_SIZE))
+            passEncoder.dispatchWorkgroups(Math.ceil(count / workPerWarp))
         }
         passEncoder.end()
         commandEncoder.copyBufferToBuffer(shaders[shaders.length - 1].bufferOut, 0, stagingBuffer, 0, 1024)
@@ -207,7 +206,7 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
 
     let bindGroup = bindGroup1
 
-    async function buildShader(code, entryPoint) {
+    async function buildShader(code, entryPoint, workPerWarp) {
       const module = device.createShaderModule({ code })
       const shaderInfo = await module.getCompilationInfo()
       if (shaderInfo.messages?.length > 0) {
@@ -227,7 +226,7 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
         console.error(e)
         log(`Pipeline creation error: ${e.message}`)
       }
-      return { ...bindGroup, pipeline }
+      return { ...bindGroup, pipeline, workPerWarp }
     }
 
     return {
