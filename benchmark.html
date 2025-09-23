@@ -83,12 +83,17 @@ function prepareSecp256input(passwords) {
     }
     return inp
 }
+const P = 0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffedn
 const ED25519_PRIVKEY = '597fc6a34994b21cc9ef71aef1e05b35c6eb693fd9038ca250fb786204b5c552'
+const ED25519_MULT    = '347fc6a34994b21c5c94565641e05b35c6eb693fd9038ca250fb786657567764'
+const ED25519_RES = ((BigInt('0x'+ED25519_PRIVKEY) * BigInt('0x'+ED25519_MULT)) % P).toString(16).padStart(64, '0')
 function prepareEd25519input(passwords) {
-    const inp = new Uint32Array(8 * passwords)
+    const inp = new Uint32Array(16 * passwords)
     const privKey = hexToUint32Array(ED25519_PRIVKEY)
+    const mult = hexToUint32Array(ED25519_MULT)
     for (let i = 0; i < passwords; i++) {
-        inp.set(privKey, i*8)
+        inp.set(privKey, i*16)
+        inp.set(mult, i*16 + 8)
     }
     return inp
 }
@@ -162,8 +167,9 @@ async function runBenchmark(options) {
             if (mode === 'secp256k1' && (u32arrToHex(out.slice(16, 32)) !== SECP_PUBKEY)) {
                 fail('❌ secp256k1 FAILED')
             }
-            if (mode === 'ed25519' && (u32arrToHex(out.slice(0, 8).reverse()) !== ED25519_PRIVKEY)) {
+            if (mode === 'ed25519' && (u32arrToHex(out.slice(0, 8)) !== ED25519_RES)) {
                 fail('❌ ed25519 FAILED')
+                console.log('exp:', ED25519_RES)
                 console.log('out:', u32arrToHex(out.slice(0, 8)))
             }
             if (mode === 'all' && out[0] !== 35) {
