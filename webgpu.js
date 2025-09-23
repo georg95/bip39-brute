@@ -83,10 +83,10 @@ function hash160ToWGSLArray(hash160List) {
     ).join(',\n')
 }
 
-async function webGPUinit({ BUF_SIZE, adapter, device }) {
+async function webGPUinit({ BUF_SIZE, eccType, adapter, device }) {
     assert(navigator.gpu, 'Browser not support WebGPU')
     assert(BUF_SIZE, 'no BUF_SIZE passed')
-    const precomputeTable = await prepareCompute()
+    const precomputeTable = await prepareCompute(eccType)
     if (!adapter && !device) {
         adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })
         device = await adapter.requestDevice() 
@@ -317,7 +317,11 @@ async function getPasswords(url) {
   return batch;
 }
 
-async function prepareCompute() {
+async function prepareCompute(type) {
+    if (type === 'ed25519') {
+      console.warn('TODO ed25519 precompute table')
+      return new Uint32Array(1024).fill(0)
+    }
     function precomputeSecp256k1Table(W, onBatch) {
     const P = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2fn;
     const M = (a, b = P) => { const r = a % b; return r >= 0n ? r : b + r; };

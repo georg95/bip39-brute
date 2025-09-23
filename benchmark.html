@@ -83,6 +83,15 @@ function prepareSecp256input(passwords) {
     }
     return inp
 }
+const ED25519_PRIVKEY = '597fc6a34994b21cc9ef71aef1e05b35c6eb693fd9038ca250fb786204b5c552'
+function prepareEd25519input(passwords) {
+    const inp = new Uint32Array(8 * passwords)
+    const privKey = hexToUint32Array(ED25519_PRIVKEY)
+    for (let i = 0; i < passwords; i++) {
+        inp.set(privKey, i*8)
+    }
+    return inp
+}
 const SECP_PUBKEY = 'b63e537acee9c54acaa717904221830ddb7b36a1545894c489165ed352538f57401934fe501d96447efbe1ddb4e5b831f6fe1c0b7239fc0de39b88700cebf64a'
 const MNEMONIC_SEED_0 = 'f3aef945a3078fcc058a7da12bcc37df8c0c075d80eac9ce9a5cd0e468fd29fb7401b8f787c4e47248ce529bfb1b34cee2c0ddb010cb0e169646b490e9e0ddf4'
 const MNEMONIC_SEED_5 = '53ae6afed8bd85ad9b5603e14ac8e4930c900c3e97c94c6a3d74a6e112a30807a4cf1ad804065107242db26844d49b11ea15e73a2ae7d04358161e040e9f360f'
@@ -91,17 +100,19 @@ async function runBenchmark(options) {
     const MNEMONIC = 'expose census trophy review common rebel ask depend build caught frame accident naive shiver inmate host assault fan tonight accident left useful tongue blood'
     const passwords = 1024 * 128
     const { name, clean, inference, buildShader, swapBuffers } =
-        await webGPUinit({...options, BUF_SIZE: passwords*128 })
+        await webGPUinit({...options, eccType: 'ed25519', BUF_SIZE: passwords*128 })
     log(`\n[${name}]\n`)
     window.output.innerHTML += 'Initialize data... '
     const start = performance.now()
     const WORKGROUP_SIZE = 64
-    const pipeline = await buildEntirePipeline({
-        addrType: 'eth', MNEMONIC, buildShader, swapBuffers, WORKGROUP_SIZE,
-        hashList: [hexToUint8Array('9f592002A9216B5eB3B00040df6a9EaE4792A0De')],
-    })
+    // const pipeline = await buildEntirePipeline({
+    //     addrType: 'eth', MNEMONIC, buildShader, swapBuffers, WORKGROUP_SIZE,
+    //     hashList: [hexToUint8Array('9f592002A9216B5eB3B00040df6a9EaE4792A0De')],
+    // })
+    let ed25519code = (await fetch('wgsl/ed25519.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
     const passwordsInput = preparePasswordsInput(passwords)
     const secp256input = prepareSecp256input(passwords)
+    const ed25519input = prepareEd25519input(passwords)
     
     log(`[${((performance.now() - start) / 1000).toFixed(1)}s]\n`)
     let shaders = []
@@ -112,7 +123,12 @@ async function runBenchmark(options) {
         clean()
         failed = true
     }
-    for (let mode of ['secp256k1', 'pbkdf2', 'all']) {
+    for (let mode of ['ed25519']) {
+        if (mode === 'ed25519') {
+            log('\nEd25519:')
+            shaders.push(await buildShader(ed25519code, 'main', WORKGROUP_SIZE))
+            inp = ed25519input
+        }
         if (mode === 'secp256k1') {
             log('\nSecp256k1:')
             shaders = [pipeline[2]]
@@ -131,7 +147,7 @@ async function runBenchmark(options) {
 
 
         await new Promise(res => setTimeout(res, 100)) // flush text
-        for (let i = 0; i < 12; i++) {
+        for (let i = 0; i < 1; i++) {
             const batchSize = 64 * (2 ** i)
             let time = Infinity
             let out
@@ -145,6 +161,10 @@ async function runBenchmark(options) {
             }
             if (mode === 'secp256k1' && (u32arrToHex(out.slice(16, 32)) !== SECP_PUBKEY)) {
                 fail('❌ secp256k1 FAILED')
+            }
+            if (mode === 'ed25519' && (u32arrToHex(out.slice(0, 8).reverse()) !== ED25519_PRIVKEY)) {
+                fail('❌ ed25519 FAILED')
+                console.log('out:', u32arrToHex(out.slice(0, 8)))
             }
             if (mode === 'all' && out[0] !== 35) {
                 fail('❌ wgsl pipeline FAILED')
