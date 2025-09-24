@@ -318,46 +318,23 @@ async function getPasswords(url) {
 }
 
 async function prepareCompute(type) {
-    if (type === 'ed25519') {
-      console.warn('TODO ed25519 precompute table')
-      return new Uint32Array(1024).fill(0)
-    }
     function precomputeSecp256k1Table(W, onBatch) {
-    const P = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2fn;
-    const M = (a, b = P) => { const r = a % b; return r >= 0n ? r : b + r; };
-    function secp256k1_add({ X: X1, Y: Y1, Z: Z1 }, { X: X2, Y: Y2, Z: Z2 }) {
-        let X3 = 0n, Y3 = 0n, Z3 = 0n; let t0 = M(X1 * X2); let t1 = M(Y1 * Y2); let t2 = M(Z1 * Z2);
-        let t3 = M(X1 + Y1); let t4 = M(X2 + Y2); let t5 = M(X2 + Z2); t3 = M(t3 * t4);
-        t4 = M(t0 + t1); t3 = M(t3 - t4); t4 = M(X1 + Z1); t4 = M(t4 * t5); t5 = M(t0 + t2);
-        t4 = M(t4 - t5); t5 = M(Y1 + Z1); X3 = M(Y2 + Z2); t5 = M(t5 * X3); X3 = M(t1 + t2);
-        t5 = M(t5 - X3); t2 = M(21n * t2); X3 = M(t1 - t2); Z3 = M(t1 + t2); Y3 = M(X3 * Z3);
-        t1 = M(t0 + t0); t1 = M(t1 + t0); t4 = M(21n * t4); t0 = M(t1 * t4); Y3 = M(Y3 + t0);
-        t0 = M(t5 * t4); X3 = M(t3 * X3); X3 = M(X3 - t0); t0 = M(t3 * t1); Z3 = M(t5 * Z3);
-        Z3 = M(Z3 + t0); return { X: X3, Y: Y3, Z: Z3 };
-    }
-    function batchAff(pointsBatch) {
-      let acc = 1n
-      const invert = (num) => {
-        let a = M(num, P), b = P, x = 0n, y = 1n, u = 1n, v = 0n;
-        while (a !== 0n) {
-            const q = b / a, r = b % a;
-            const m = x - u * q, n = y - v * q;
-            b = a, a = r, x = u, y = v, u = m, v = n;
-          }
-          return M(x, P);
-        };
-        const scratch = [1n].concat(pointsBatch.map(ni => acc = (acc * ni.Z) % P))
-        let inv = invert(acc)
-        const Zinv = new Array(pointsBatch.length);
-        for (let i = pointsBatch.length - 1; i >= 0; i--) {
-          Zinv[i] = (scratch[i] * inv) % P
-          inv = (inv * pointsBatch[i].Z) % P
-        }
-        return Zinv.map((iz, i) => ({ X: M(pointsBatch[i].X * iz), Y: M(pointsBatch[i].Y * iz), Z: 1n }));
-    }
-    let p = { X: 0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798n, Y: 0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8n, Z: 1n };
-    let b = p;
-    for (let w = 0; w < Math.ceil(256 / W); w++) {
+      const P = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2fn;
+      const M = (a, b = P) => { const r = a % b; return r >= 0n ? r : b + r; };
+      function secp256k1_add({ X: X1, Y: Y1, Z: Z1 }, { X: X2, Y: Y2, Z: Z2 }) {
+          let X3 = 0n, Y3 = 0n, Z3 = 0n; let t0 = M(X1 * X2); let t1 = M(Y1 * Y2); let t2 = M(Z1 * Z2);
+          let t3 = M(X1 + Y1); let t4 = M(X2 + Y2); let t5 = M(X2 + Z2); t3 = M(t3 * t4);
+          t4 = M(t0 + t1); t3 = M(t3 - t4); t4 = M(X1 + Z1); t4 = M(t4 * t5); t5 = M(t0 + t2);
+          t4 = M(t4 - t5); t5 = M(Y1 + Z1); X3 = M(Y2 + Z2); t5 = M(t5 * X3); X3 = M(t1 + t2);
+          t5 = M(t5 - X3); t2 = M(21n * t2); X3 = M(t1 - t2); Z3 = M(t1 + t2); Y3 = M(X3 * Z3);
+          t1 = M(t0 + t0); t1 = M(t1 + t0); t4 = M(21n * t4); t0 = M(t1 * t4); Y3 = M(Y3 + t0);
+          t0 = M(t5 * t4); X3 = M(t3 * X3); X3 = M(X3 - t0); t0 = M(t3 * t1); Z3 = M(t5 * Z3);
+          Z3 = M(Z3 + t0); return { X: X3, Y: Y3, Z: Z3 };
+      }
+
+      let p = { X: 0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798n, Y: 0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8n, Z: 1n };
+      let b = p;
+      for (let w = 0; w < Math.ceil(256 / W); w++) {
         b = p
         var pointsBatch = []
         pointsBatch.push(b);
@@ -365,23 +342,89 @@ async function prepareCompute(type) {
           b = secp256k1_add(b, p);
           pointsBatch.push(b);
         }
-        onBatch(batchAff(pointsBatch), w)
-        p = batchAff([secp256k1_add(b, b)])[0];
+        onBatch(batchAff(pointsBatch, P), w)
+        p = batchAff([secp256k1_add(b, b)], P)[0];
+      }
+    }
+
+    function batchAff(pointsBatch, P) {
+        const M = (a, b = P) => { const r = a % b; return r >= 0n ? r : b + r; };
+        let acc = 1n
+        const invert = (num, P) => {
+            let a = M(num, P), b = P, x = 0n, y = 1n, u = 1n, v = 0n;
+            while (a !== 0n) {
+                const q = b / a, r = b % a;
+                const m = x - u * q, n = y - v * q;
+                b = a, a = r, x = u, y = v, u = m, v = n;
+            }
+            return M(x, P);
+        };
+        const scratch = [1n].concat(pointsBatch.map(ni => acc = (acc * ni.Z) % P))
+        let inv = invert(acc, P)
+        const Zinv = new Array(pointsBatch.length);
+        for (let i = pointsBatch.length - 1; i >= 0; i--) {
+            Zinv[i] = (scratch[i] * inv) % P
+            inv = (inv * pointsBatch[i].Z) % P
+        }
+        return Zinv.map((iz, i) => ({ X: M(pointsBatch[i].X * iz), Y: M(pointsBatch[i].Y * iz), Z: 1n }));
+    }
+
+    function precomputeEd25519Table(W, onBatch) {
+      const P = 0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffedn
+      const M = (a, b = P) => { const r = a % b; return r >= 0n ? r : b + r; };
+      function ed25519_add({ X: X1, Y: Y1, Z: Z1, T: T1 }, { X: X2, Y: Y2, Z: Z2, T: T2 }) {
+          const a = 0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffecn;
+          const d = 0x52036cee2b6ffe738cc740797779e89800700a4d4141d8ab75eb4dca135978a3n;
+          const A = M(X1 * X2), B = M(Y1 * Y2), C = M(T1 * d * T2), D = M(Z1 * Z2);
+          const E = M((X1 + Y1) * (X2 + Y2) - A - B), F = M(D - C), G = M(D + C), H = M(B - a * A);
+          return { X: M(E * F), Y: M(G * H), T: M(E * H), Z: M(F * G) }
+      }
+      let p = { X: 0x216936d3cd6e53fec0a4e231fdd6dc5c692cc7609525a7b2c9562d608f25d51an, Y: 0x6666666666666666666666666666666666666666666666666666666666666658n, Z: 1n }
+      let b;
+      for (let w = 0; w < Math.ceil(256 / W); w++) {
+        p.T = M(p.X * p.Y)
+        b = p
+        var pointsBatch = []
+        pointsBatch.push(b)
+        for (let i = 1; i < 2 ** (W - 1); i++) {
+          b = ed25519_add(b, p)
+          pointsBatch.push(b)
+        }
+        onBatch(batchAff(pointsBatch, P), w)
+        p = batchAff([ed25519_add(b, b)], P)[0]
       }
     }
 
     const PRECOMPUTE_WINDOW = 16
-    const PRECOMPUTE_SIZE = 2 ** (PRECOMPUTE_WINDOW - 1) * (Math.ceil(256 / PRECOMPUTE_WINDOW)) * 64
+    const PRECOMPUTE_SIZE = 2 ** (PRECOMPUTE_WINDOW - 1) * (Math.ceil(256 / PRECOMPUTE_WINDOW)) * (type === 'ed25519' ? 96 : 64)
     const precomputeTable = new Uint32Array(PRECOMPUTE_SIZE / 4).fill(0)
-    precomputeSecp256k1Table(PRECOMPUTE_WINDOW, (batch, i) => {
-      batch.forEach(({X, Y}, j) => {
-        const index = i * batch.length + j
-        const xx = BigToU32_reverse(X)
-        for (var x = 0; x < 8; x++) { precomputeTable[index*16 + x] = xx[x] }
-        const yy = BigToU32_reverse(Y)
-        for (var y = 0; y < 8; y++) { precomputeTable[index*16 + 8 + y] = yy[y] }
+    const start = performance.now()
+    if (type === 'ed25519') {
+      const d2 = 0x52036cee2b6ffe738cc740797779e89800700a4d4141d8ab75eb4dca135978a3n * 2n;
+      const P = 0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffedn;
+      precomputeEd25519Table(PRECOMPUTE_WINDOW, (batch, i) => {
+        batch.forEach(({X, Y}, j) => {
+          const index = i * batch.length + j
+          const xx = BigToU32_reverse(X)
+          for (var k = 0; k < 8; k++) { precomputeTable[index*16 + i] = xx[k] }
+          const yy = BigToU32_reverse(Y)
+          for (var k = 0; k < 8; k++) { precomputeTable[index*16 + 8 + i] = yy[k] }
+          const d2xy = BigToU32_reverse((d2*X*Y) % P)
+          for (var k = 0; k < 8; k++) { precomputeTable[index*16 + 16 + i] = d2xy[k] }
+        })
       })
-    })
+    } else {
+      precomputeSecp256k1Table(PRECOMPUTE_WINDOW, (batch, i) => {
+        batch.forEach(({X, Y}, j) => {
+          const index = i * batch.length + j
+          const xx = BigToU32_reverse(X)
+          for (var x = 0; x < 8; x++) { precomputeTable[index*16 + x] = xx[x] }
+          const yy = BigToU32_reverse(Y)
+          for (var y = 0; y < 8; y++) { precomputeTable[index*16 + 8 + y] = yy[y] }
+        })
+      })
+    }
+    console.log(`precompute ${type} table in`, performance.now() - start | 0, 'ms')
     return precomputeTable
 }
 
