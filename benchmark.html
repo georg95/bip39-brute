@@ -83,43 +83,12 @@ function prepareSecp256input(passwords) {
     }
     return inp
 }
-const P = 0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffedn
-const ED25519_PRIVKEY = '597fc6a34994b21cc9ef71aef1e05b35c6eb693fd9038ca250fb786204b5c552'
-const ED25519_MULT    = '347fc6a34994b21c5c94565641e05b35c6eb693fd9038ca250fb786657567764'
-const ED25519_RES = ((BigInt('0x'+ED25519_PRIVKEY) - BigInt('0x'+ED25519_MULT)) % P).toString(16).padStart(64, '0')
-
-const G = {
-  X: 15112221349535400772501151409588531511454012693041857206046113283949847762202n,
-  Y: 46316835694926478169428394003475163141307993866256225615783033603165251855960n,
-  Z: 1n,
-  T: 46827403850823179245072216630277197565144205554125654976674165829533817101731n
-}
-
-const G1 = {
-  x: 15112221349535400772501151409588531511454012693041857206046113283949847762202n,
-  y: 46316835694926478169428394003475163141307993866256225615783033603165251855960n,
-  d2xy: 50237614328228664512531835696112167678046477356841409204013502641986506238568n
-}
-
-const G4 = {
-  X: 23197316746682137658487753814694637550837603101346191093668207172644967360191n,
-  Y: 55755159111342471132708473709989135413752952857057988548665654794180019744770n,
-  Z: 1971637863633247841617451804960054392857332397230032358963871280450295096525n,
-  T: 40539236718722673024053576499751733433162581194985029906778799683827034136039n
-}
-
+const ED25519_PRIVKEY = '000000000004b21cc9ef71aef1e05b35c6eb693fd9038ca250fb786204b5c552'
 function prepareEd25519input(passwords) {
-    const inp = new Uint32Array(64 * passwords)
+    const inp = new Uint32Array(8 * passwords)
     const privKey = hexToUint32Array(ED25519_PRIVKEY)
-    const mult = hexToUint32Array(ED25519_MULT)
     for (let i = 0; i < passwords; i++) {
-        inp.set(bigTo32Array(G.X), i*64)
-        inp.set(bigTo32Array(G.Y), i*64 + 8)
-        inp.set(bigTo32Array(G.Z), i*64 + 16)
-        inp.set(bigTo32Array(G.T), i*64 + 24)
-        inp.set(bigTo32Array(G1.x), i*64 + 32)
-        inp.set(bigTo32Array(G1.y), i*64 + 40)
-        inp.set(bigTo32Array(G1.d2xy), i*64 + 48)
+        inp.set(privKey, i*8)
     }
     return inp
 }
@@ -194,19 +163,15 @@ async function runBenchmark(options) {
                 fail('❌ secp256k1 FAILED')
             }
             if (mode === 'ed25519' && (
-                u32arrToHex(out.slice(0, 8)) !== G4.X.toString(16).padStart(64, '0') ||
-                u32arrToHex(out.slice(8, 16)) !== G4.Y.toString(16).padStart(64, '0') ||
-                u32arrToHex(out.slice(16, 24)) !== G4.Z.toString(16).padStart(64, '0') ||
-                u32arrToHex(out.slice(24, 32)) !== G4.T.toString(16).padStart(64, '0')
+                u32arrToHex(out.slice(0, 8)) !== '501c2d90ed415e7723870c7ffc61de70cf392e1223817bbb64f296b8732f9f45'||
+                u32arrToHex(out.slice(8, 16)) !== '145ae9854c2b00c019c52ccdb7ebf86bc960a52b4aecb9b7f06f625bf342ca8c' ||
+                u32arrToHex(out.slice(16, 24)) !== '20e98e2712b9ce6e91e9347e3d8bb2bc0a5ab8e9ee2c7ad50a289adf1269ab07' ||
+                u32arrToHex(out.slice(24, 32)) !== '069e51bd13c26ffe4fbb9f44b2cd2879f64397ac2c75d1fb5b22ae7a1cd8321a'
             )) {
                 fail('❌ ed25519 FAILED')
-                console.log(' .x:', G4.X.toString(16).padStart(64, '0'))
                 console.log('G.x:', u32arrToHex(out.slice(0, 8)))
-                console.log(' .y:', G4.Y.toString(16).padStart(64, '0'))
                 console.log('G.y:', u32arrToHex(out.slice(8, 16)))
-                console.log(' .z:', G4.Z.toString(16).padStart(64, '0'))
                 console.log('G.z:', u32arrToHex(out.slice(16, 24)))
-                console.log(' .t:', G4.T.toString(16).padStart(64, '0'))
                 console.log('G.t:', u32arrToHex(out.slice(24, 32)))
             }
             if (mode === 'all' && out[0] !== 35) {

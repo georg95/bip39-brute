@@ -406,11 +406,11 @@ async function prepareCompute(type) {
         batch.forEach(({X, Y}, j) => {
           const index = i * batch.length + j
           const xx = BigToU32_reverse(X)
-          for (var k = 0; k < 8; k++) { precomputeTable[index*16 + i] = xx[k] }
+          for (var k = 0; k < 8; k++) { precomputeTable[index*24 + k] = xx[k] }
           const yy = BigToU32_reverse(Y)
-          for (var k = 0; k < 8; k++) { precomputeTable[index*16 + 8 + i] = yy[k] }
+          for (var k = 0; k < 8; k++) { precomputeTable[index*24 + 8 + k] = yy[k] }
           const d2xy = BigToU32_reverse((d2*X*Y) % P)
-          for (var k = 0; k < 8; k++) { precomputeTable[index*16 + 16 + i] = d2xy[k] }
+          for (var k = 0; k < 8; k++) { precomputeTable[index*24 + 16 + k] = d2xy[k] }
         })
       })
     } else {

@@ -262,20 +262,6 @@ fn msub_unsafe(out: ptr<function, array<u32, 10>>, a: ptr<function, array<u32, 1
 	out[9] = 0x03fffffe + a[9] - b[9]    ;
 }
 
-fn copy(r: ptr<function, array<u32, 10>>, a: ptr<function, array<u32, 10>>) {
-  r[0] = a[0];
-  r[1] = a[1];
-  r[2] = a[2];
-  r[3] = a[3];
-  r[4] = a[4];
-  r[5] = a[5];
-  r[6] = a[6];
-  r[7] = a[7];
-  r[8] = a[8];
-  r[9] = a[9];
-}
-
-
 fn load26x10(inp: ptr<function, array<u32, 8>>, out: ptr<function, array<u32, 10>>) {
     out[0] = inp[0] & 0x3FFFFFFu;
     out[1] = (inp[0] >> 26) | ((inp[1] & 0x7FFFFu) << 6);
@@ -300,9 +286,98 @@ fn store26x10(a: ptr<function, array<u32, 10>>, offset: u32) {
     output[offset + 0u] = ((*a)[8] >> 20) | ((*a)[9] << 6);
 }
 
-@group(0) @binding(0) var<storage, read> input: array<u32>;
-@group(0) @binding(1) var<storage, read_write> output: array<u32>;
-@group(0) @binding(2) var<storage, read> prec_table: array<u32>;
+fn loadCompPt(p: ptr<function, affinePoint>, index: u32) {
+  var tmp: array<u32, 8>;
+  for (var i = 0u; i < 8; i++) {
+    tmp[i] = prec_table[index*24 + i];
+  }
+  load26x10(&tmp, &p.x);
+  for (var i = 0u; i < 8; i++) {
+    tmp[i] = prec_table[index*24 + 8 + i];
+  }
+  load26x10(&tmp, &p.y);
+  for (var i = 0u; i < 8; i++) {
+    tmp[i] = prec_table[index*24 + 16 + i];
+  }
+  load26x10(&tmp, &p.d2xy);
+}
+
+fn set0(r: ptr<function, array<u32, 10>>) {
+  r[0] = 0; r[1] = 0; r[2] = 0; r[3] = 0; r[4] = 0; r[5] = 0; r[6] = 0; r[7] = 0; r[8] = 0; r[9] = 0;
+}
+fn set1(r: ptr<function, array<u32, 10>>) {
+  r[0] = 1; r[1] = 0; r[2] = 0; r[3] = 0; r[4] = 0; r[5] = 0; r[6] = 0; r[7] = 0; r[8] = 0; r[9] = 0;
+}
+fn set0pt(p: ptr<function, normalPoint>) {
+  set0(&p.X);
+  set1(&p.Y);
+  set1(&p.Z);
+  set0(&p.T);
+
+  /*
+  msub(&E, (y+x), (y-x));
+  madd(&H, (y+x), (y-x));
+  mmul(&r.X, &E, 2);
+  mmul(&r.Y, 2, &H);
+  mmul(&r.T, &E, &H);
+  mmul(&r.Z, 2, 2);
+  */
+}
+
+fn mnegate(r: ptr<function, array<u32, 10>>) {
+	var c: u32;
+	r[0] = 0x07ffffda - r[0]    ; c = (r[0] >> 26); r[0] &= reduce_mask_26;
+	r[1] = 0x03fffffe - r[1] + c; c = (r[1] >> 25); r[1] &= reduce_mask_25;
+	r[2] = 0x07fffffe - r[2] + c; c = (r[2] >> 26); r[2] &= reduce_mask_26;
+	r[3] = 0x03fffffe - r[3] + c; c = (r[3] >> 25); r[3] &= reduce_mask_25;
+	r[4] = 0x07fffffe - r[4] + c; c = (r[4] >> 26); r[4] &= reduce_mask_26;
+	r[5] = 0x03fffffe - r[5] + c; c = (r[5] >> 25); r[5] &= reduce_mask_25;
+	r[6] = 0x07fffffe - r[6] + c; c = (r[6] >> 26); r[6] &= reduce_mask_26;
+	r[7] = 0x03fffffe - r[7] + c; c = (r[7] >> 25); r[7] &= reduce_mask_25;
+	r[8] = 0x07fffffe - r[8] + c; c = (r[8] >> 26); r[8] &= reduce_mask_26;
+	r[9] = 0x03fffffe - r[9] + c; c = (r[9] >> 25); r[9] &= reduce_mask_25;
+	r[0] += 19 * c;
+}
+
+fn ed25519_mul(gidX: u32) -> normalPoint {
+  var G256: affinePoint;
+  var G256x: array<u32, 8> = array<u32, 8>(0x0cc2a556u, 0x20b8bcddu, 0xb561576du, 0xd4b578fbu, 0x26905449u, 0xe6e9cbc1u, 0x4e1decbfu, 0x5e7e07edu);  
+  var G256y: array<u32, 8> = array<u32, 8>(0x566cf6c7u, 0x0e142031u, 0xc127d9a8u, 0x7d1b3d9au, 0x81d3260eu, 0x6bf5ebaau, 0x51f10279u, 0x0f55755cu);  
+  var G256d2xy: array<u32, 8> = array<u32, 8>(0x2106e4c7u, 0x6c444417u, 0x928d7f69u, 0xfb53d680u, 0x694d3f26u, 0xb4739ea4u, 0x2e864bb0u, 0x10c69711u);
+  load26x10(&G256x, &G256.x); load26x10(&G256y, &G256.y); load26x10(&G256d2xy, &G256.d2xy);
+
+  var p: normalPoint;
+  var ptTmp: normalPoint;
+  var ptA: affinePoint;
+  set0pt(&p);
+  set0pt(&ptTmp);
+
+  var privKey: array<u32, 8>;
+  for (var i: u32 = 0; i < 8; i++) { privKey[i] = input[gidX * 16u + 7u - i]; }
+  let mask: u32 = 0xffffu;
+  var carry: u32 = 0u;
+  for (var w = 0u; w < 16; w++) {
+    let index: u32 = w / 2u;
+    let part = w%2u;
+    var wbits: i32 = i32(((privKey[index] >> (part * 16u)) & mask) + carry);
+    if (wbits > 32768) { wbits -= 65536; carry = 1u; }
+    else { carry = 0; }
+    let off = w * 32768u;
+    if (wbits != 0) {
+      let offP: u32 = off + u32(abs(wbits)) - 1;
+      loadCompPt(&ptA, offP);
+      if (wbits < 0) { mnegate(&ptA.x); mnegate(&ptA.d2xy); }
+      ed25519_add(&ptTmp, &p, &ptA);
+      p = ptTmp;
+    }
+  }
+  if (carry > 0) {
+    ed25519_add(&ptTmp, &p, &G256);
+    p = ptTmp;
+  }
+
+  return p;
+}
 
 fn loadX(p10: ptr<function, array<u32, 10>>, offset: u32) {
   var p: array<u32, 8>;
@@ -312,27 +387,16 @@ fn loadX(p10: ptr<function, array<u32, 10>>, offset: u32) {
   load26x10(&p, p10);
 }
 
+
+@group(0) @binding(0) var<storage, read> input: array<u32>;
+@group(0) @binding(1) var<storage, read_write> output: array<u32>;
+@group(0) @binding(2) var<storage, read> prec_table: array<u32>;
+
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  var P1: normalPoint;
-  var PA: affinePoint;
-  loadX(&P1.X, gid.x*64);
-  loadX(&P1.Y, gid.x*64 + 8);
-  loadX(&P1.Z, gid.x*64 + 16);
-  loadX(&P1.T, gid.x*64 + 24);
-
-  loadX(&PA.x, gid.x*64 + 32);
-  loadX(&PA.y, gid.x*64 + 40);
-  loadX(&PA.d2xy, gid.x*64 + 48);
-
-
-  var P_RES: normalPoint;
-  ed25519_add(&P_RES, &P1, &PA);
-  ed25519_add(&P1, &P_RES, &PA);
-  ed25519_add(&P_RES, &P1, &PA);
-
-  store26x10(&P_RES.X, gid.x*32);
-  store26x10(&P_RES.Y, gid.x*32 + 8);
-  store26x10(&P_RES.Z, gid.x*32 + 16);
-  store26x10(&P_RES.T, gid.x*32 + 24);
+  var p = ed25519_mul(gid.x);
+  store26x10(&p.X, gid.x*32);
+  store26x10(&p.Y, gid.x*32+8);
+  store26x10(&p.Z, gid.x*32+16);
+  store26x10(&p.T, gid.x*32+24);
 }
