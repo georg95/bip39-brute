@@ -202,6 +202,47 @@ fn ed25519_add(r: ptr<function, normalPoint>, p: ptr<function, normalPoint>, q: 
   mmul(&r.Z, &F, &G);
 }
 
+// void fe_invert(fe out, const fe z) {
+//     fe t0;
+//     fe t1;
+//     fe t2;
+//     fe t3;
+//     int i;
+//     fe_sq(t0, z);
+//     for (i = 1; i < 1; ++i) { fe_sq(t0, t0); }
+//     fe_sq(t1, t0);
+//     for (i = 1; i < 2; ++i) { fe_sq(t1, t1); }
+//     fe_mul(t1, z, t1);
+//     fe_mul(t0, t0, t1);
+//     fe_sq(t2, t0);
+//     for (i = 1; i < 1; ++i) { fe_sq(t2, t2); }
+//     fe_mul(t1, t1, t2);
+//     fe_sq(t2, t1);
+//     for (i = 1; i < 5; ++i) { fe_sq(t2, t2); }
+//     fe_mul(t1, t2, t1);
+//     fe_sq(t2, t1);
+//     for (i = 1; i < 10; ++i) { fe_sq(t2, t2); }
+//     fe_mul(t2, t2, t1);
+//     fe_sq(t3, t2);
+//     for (i = 1; i < 20; ++i) { fe_sq(t3, t3); }
+//     fe_mul(t2, t3, t2);
+//     fe_sq(t2, t2);
+//     for (i = 1; i < 10; ++i) { fe_sq(t2, t2); }
+//     fe_mul(t1, t2, t1);
+//     fe_sq(t2, t1);
+//     for (i = 1; i < 50; ++i) { fe_sq(t2, t2); }
+//     fe_mul(t2, t2, t1);
+//     fe_sq(t3, t2);
+//     for (i = 1; i < 100; ++i) { fe_sq(t3, t3); }
+//     fe_mul(t2, t3, t2);
+//     fe_sq(t2, t2);
+//     for (i = 1; i < 50; ++i) { fe_sq(t2, t2); }
+//     fe_mul(t1, t2, t1);
+//     fe_sq(t1, t1);
+//     for (i = 1; i < 5; ++i) { fe_sq(t1, t1); }
+//     fe_mul(out, t1, t0);
+// }
+
 const reduce_mask_25: u32 = (1 << 25) - 1;
 const reduce_mask_26: u32 = (1 << 26) - 1;
 
@@ -313,15 +354,6 @@ fn set0pt(p: ptr<function, normalPoint>) {
   set1(&p.Y);
   set1(&p.Z);
   set0(&p.T);
-
-  /*
-  msub(&E, (y+x), (y-x));
-  madd(&H, (y+x), (y-x));
-  mmul(&r.X, &E, 2);
-  mmul(&r.Y, 2, &H);
-  mmul(&r.T, &E, &H);
-  mmul(&r.Z, 2, 2);
-  */
 }
 
 fn mnegate(r: ptr<function, array<u32, 10>>) {
@@ -378,15 +410,6 @@ fn ed25519_mul(gidX: u32) -> normalPoint {
 
   return p;
 }
-
-fn loadX(p10: ptr<function, array<u32, 10>>, offset: u32) {
-  var p: array<u32, 8>;
-  for (var i = 0u; i < 8u; i++) {
-    p[i] = input[offset + 7 - i];
-  }
-  load26x10(&p, p10);
-}
-
 
 @group(0) @binding(0) var<storage, read> input: array<u32>;
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;

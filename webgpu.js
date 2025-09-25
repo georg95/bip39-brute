@@ -4,6 +4,7 @@ const ADDRTYPEMAP = {
   'p2sh': [49, 0],
   'eth': [44, 60],
   'tron': [44, 195],
+  'solana': [44, 501],
 }
 async function buildEntirePipeline({ addrType, MNEMONIC, WORKGROUP_SIZE, buildShader, swapBuffers, hashList }) {
     assert(addrType && ADDRTYPEMAP[addrType] && MNEMONIC && WORKGROUP_SIZE && buildShader && swapBuffers && hashList)
@@ -18,16 +19,26 @@ async function buildEntirePipeline({ addrType, MNEMONIC, WORKGROUP_SIZE, buildSh
         .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
         .replaceAll('NETWORK', NETWORK)
         .replaceAll('COIN_TYPE', COIN_TYPE)
-    let secp256k1Code = (await fetch('wgsl/secp256k1.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
 
     console.time('[COMPILE] pbkdf2');
     shaders.push(await buildShader(pbkdf2Code, 'main', WORKGROUP_SIZE))
     console.timeEnd('[COMPILE] pbkdf2');
     swapBuffers()
     console.time('[COMPILE] deriveCoin');
-    shaders.push(await buildShader(deriveCode, 'deriveCoin', WORKGROUP_SIZE))
+    shaders.push(await buildShader(deriveCode, addrType === 'solana' ? 'deriveSolana' : 'deriveCoin', WORKGROUP_SIZE))
     console.timeEnd('[COMPILE] deriveCoin');
     swapBuffers()
+
+    if (addrType === 'solana') {
+        // let ed25519Code = (await fetch('wgsl/ed25519.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
+        // console.time('[COMPILE] ed25519');
+        // shaders.push(await buildShader(ed25519Code, 'main', WORKGROUP_SIZE))
+        // console.timeEnd('[COMPILE] ed25519');
+        // swapBuffers()
+        return shaders
+    }
+
+    let secp256k1Code = (await fetch('wgsl/secp256k1.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
     console.time('[COMPILE] secp256k1');
     const secp256k1Shader = await buildShader(secp256k1Code, 'main', WORKGROUP_SIZE * 8)
     console.timeEnd('[COMPILE] secp256k1');
@@ -114,7 +125,7 @@ async function webGPUinit({ BUF_SIZE, eccType, adapter, device }) {
     }
 
     const stagingBuffer = device.createBuffer({
-        size: 1024,
+        size: 4096,
         usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
     });
 
@@ -140,11 +151,11 @@ async function webGPUinit({ BUF_SIZE, eccType, adapter, device }) {
             passEncoder.dispatchWorkgroups(Math.ceil(count / workPerWarp))
         }
         passEncoder.end()
-        commandEncoder.copyBufferToBuffer(shaders[shaders.length - 1].bufferOut, 0, stagingBuffer, 0, 1024)
+        commandEncoder.copyBufferToBuffer(shaders[shaders.length - 1].bufferOut, 0, stagingBuffer, 0, 4096)
         device.queue.submit([commandEncoder.finish()])
-        await stagingBuffer.mapAsync(GPUMapMode.READ, 0, 1024)
-        const copyArrayBuffer = stagingBuffer.getMappedRange(0, 1024)
-        const result = new Uint32Array(copyArrayBuffer.slice(), 0, 256)
+        await stagingBuffer.mapAsync(GPUMapMode.READ, 0, 4096)
+        const copyArrayBuffer = stagingBuffer.getMappedRange(0, 4096)
+        const result = new Uint32Array(copyArrayBuffer.slice(), 0, 1024)
         stagingBuffer.unmap()
         return result
     }
@@ -318,6 +329,10 @@ async function getPasswords(url) {
 }
 
 async function prepareCompute(type) {
+    if (type !== 'ed25519' && type !== 'secp256k1') {
+       console.warn(`Unknown ecc type ${type} - empty precompute table`)
+       return new Uint32Array(1024)
+    }
     function precomputeSecp256k1Table(W, onBatch) {
       const P = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2fn;
       const M = (a, b = P) => { const r = a % b; return r >= 0n ? r : b + r; };

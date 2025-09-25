@@ -83,7 +83,7 @@ function prepareSecp256input(passwords) {
     }
     return inp
 }
-const ED25519_PRIVKEY = '000000000004b21cc9ef71aef1e05b35c6eb693fd9038ca250fb786204b5c552'
+const ED25519_PRIVKEY = '09ffcb448f752fd52d656882451e24a80e4dbbbc0a71ec83b8d3d720503c3484'
 function prepareEd25519input(passwords) {
     const inp = new Uint32Array(8 * passwords)
     const privKey = hexToUint32Array(ED25519_PRIVKEY)
@@ -93,6 +93,15 @@ function prepareEd25519input(passwords) {
     return inp
 }
 const SECP_PUBKEY = 'b63e537acee9c54acaa717904221830ddb7b36a1545894c489165ed352538f57401934fe501d96447efbe1ddb4e5b831f6fe1c0b7239fc0de39b88700cebf64a'
+
+function prepareDeriveSolanaInput(passwords) {
+    const inp = new Uint32Array(16 * passwords)
+    const seed = hexToUint32Array('2177a1d6e983977c6b8e1b2214da6e61651d878d2c002024d086ee0e50626f0cf3890c740d8c425380397c61395ff2147d49d068be6a68d3e8b775e7a20c20ed')
+    for (let i = 0; i < passwords; i++) {
+        inp.set(seed, i * 16)
+    }
+    return inp
+}
 const MNEMONIC_SEED_0 = 'f3aef945a3078fcc058a7da12bcc37df8c0c075d80eac9ce9a5cd0e468fd29fb7401b8f787c4e47248ce529bfb1b34cee2c0ddb010cb0e169646b490e9e0ddf4'
 const MNEMONIC_SEED_5 = '53ae6afed8bd85ad9b5603e14ac8e4930c900c3e97c94c6a3d74a6e112a30807a4cf1ad804065107242db26844d49b11ea15e73a2ae7d04358161e040e9f360f'
 
@@ -106,13 +115,18 @@ async function runBenchmark(options) {
     const start = performance.now()
     const WORKGROUP_SIZE = 64
     // const pipeline = await buildEntirePipeline({
-    //     addrType: 'eth', MNEMONIC, buildShader, swapBuffers, WORKGROUP_SIZE,
+    //     addrType: 'solana', MNEMONIC, buildShader, swapBuffers, WORKGROUP_SIZE,
     //     hashList: [hexToUint8Array('9f592002A9216B5eB3B00040df6a9EaE4792A0De')],
     // })
     let ed25519code = (await fetch('wgsl/ed25519.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
+    let deriveCode = (await fetch('wgsl/derive_coin.wgsl').then(r => r.text()))
+        .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
+        .replaceAll('NETWORK', 44)
+        .replaceAll('COIN_TYPE', 501)
     const passwordsInput = preparePasswordsInput(passwords)
     const secp256input = prepareSecp256input(passwords)
     const ed25519input = prepareEd25519input(passwords / 2)
+    const deriveSolanaInput = prepareDeriveSolanaInput(passwords)
     
     log(`[${((performance.now() - start) / 1000).toFixed(1)}s]\n`)
     let shaders = []
@@ -123,11 +137,16 @@ async function runBenchmark(options) {
         clean()
         failed = true
     }
-    for (let mode of ['ed25519']) {
+    for (let mode of ['ed25519', 'solana']) {
         if (mode === 'ed25519') {
             log('\nEd25519:')
             shaders.push(await buildShader(ed25519code, 'main', WORKGROUP_SIZE))
             inp = ed25519input
+        }
+        if (mode === 'solana') {
+            log('\nDerive Solana:')
+            shaders.push(await buildShader(deriveCode, 'deriveSolana', WORKGROUP_SIZE))
+            inp = deriveSolanaInput
         }
         if (mode === 'secp256k1') {
             log('\nSecp256k1:')
@@ -144,7 +163,6 @@ async function runBenchmark(options) {
             shaders = pipeline
             inp = passwordsInput
         }
-
 
         await new Promise(res => setTimeout(res, 100)) // flush text
         for (let i = 0; i < 1; i++) {
@@ -163,16 +181,21 @@ async function runBenchmark(options) {
                 fail('❌ secp256k1 FAILED')
             }
             if (mode === 'ed25519' && (
-                u32arrToHex(out.slice(0, 8)) !== '501c2d90ed415e7723870c7ffc61de70cf392e1223817bbb64f296b8732f9f45'||
-                u32arrToHex(out.slice(8, 16)) !== '145ae9854c2b00c019c52ccdb7ebf86bc960a52b4aecb9b7f06f625bf342ca8c' ||
-                u32arrToHex(out.slice(16, 24)) !== '20e98e2712b9ce6e91e9347e3d8bb2bc0a5ab8e9ee2c7ad50a289adf1269ab07' ||
-                u32arrToHex(out.slice(24, 32)) !== '069e51bd13c26ffe4fbb9f44b2cd2879f64397ac2c75d1fb5b22ae7a1cd8321a'
+                u32arrToHex(out.slice(0, 8)) !== '5abd037ce46f812b1e4c6ccae00fad7ba2b0ed09be3a918e87d8ab422ebfe989'||
+                u32arrToHex(out.slice(8, 16)) !== '1a2576d890c125eac4dfb7a779132d558a58821392e5643667e6c605b66e6ffc' ||
+                u32arrToHex(out.slice(16, 24)) !== '4a51aa1e20ffda944667a1130e6ca49fbbd9880bd3d9834e6c8b3713cf333393' ||
+                u32arrToHex(out.slice(24, 32)) !== '7ea922710a862d30510eaae9c03d1d2cbf13a80dd276847aa84d56e117b9cd8d'
             )) {
                 fail('❌ ed25519 FAILED')
                 console.log('G.x:', u32arrToHex(out.slice(0, 8)))
                 console.log('G.y:', u32arrToHex(out.slice(8, 16)))
                 console.log('G.z:', u32arrToHex(out.slice(16, 24)))
                 console.log('G.t:', u32arrToHex(out.slice(24, 32)))
+            }
+            if (mode === 'solana' && u32arrToHex(out.slice(0, 8)) !== ED25519_PRIVKEY) {
+                fail('❌ solana FAILED')
+                console.log('Expected:', ED25519_PRIVKEY)
+                console.log('Priv key:', u32arrToHex(out.slice(0, 8)))
             }
             if (mode === 'all' && out[0] !== 35) {
                 fail('❌ wgsl pipeline FAILED')

@@ -135,6 +135,11 @@ fn setByteArr(arr: ptr<function, array<u32, 32>>, idx: u32, byte: u32) {
   let sh = idx%4;
   arr[i] = (arr[i] & masks[sh]) + (byte << (24 - sh * 8));
 }
+fn setByteArr2(arr: ptr<function, array<u32, 16>>, idx: u32, byte: u32) {
+  let i = idx/4;
+  let sh = idx%4;
+  arr[i] = (arr[i] & masks[sh]) + (byte << (24 - sh * 8));
+}
 fn getByteArr(arr: ptr<function, array<u32, 16>>, idx: u32) -> u32 {
   let i = idx/4;
   let sh = idx%4;
@@ -270,11 +275,11 @@ fn deriveChild(keys: ptr<function, array<u32, 16>>, network: u32, coin: u32) {
   }
 }
 
-fn deriveSeed(keys: ptr<function, array<u32, 16>>, offset: u32) {
+fn deriveSeed(keys: ptr<function, array<u32, 16>>, password: array<u32, 3>, offset: u32) {
   var key: array<u32, 16>;
   var data: array<u32, 32>;
   for (var i = 0; i < 16; i++) { key[i] = 0; }
-  key[0] = 0x42697463; key[1] = 0x6f696e20; key[2] = 0x73656564;
+  key[0] = password[0]; key[1] = password[1]; key[2] = password[2];
   for (var i: u32 = 0; i < 16; i++) { data[i] = input[offset + i]; }
   for (var i: u32 = 16; i < 32; i++) { data[i] = 0; }
   hmacSha512(&key, &data, 64, keys);
@@ -286,7 +291,8 @@ fn deriveSeed(keys: ptr<function, array<u32, 16>>, offset: u32) {
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn deriveCoin(@builtin(global_invocation_id) gid: vec3<u32>) {
   var keys: array<u32, 16>;
-  deriveSeed(&keys, gid.x * 16u);
+  //                             "Bitcoin seed"
+  deriveSeed(&keys, array<u32, 3>(0x42697463, 0x6f696e20, 0x73656564), gid.x * 16u);
   deriveChild(&keys, 128, NETWORK);
   deriveChild(&keys, 128, COIN_TYPE);
   deriveChild(&keys, 128, 0);
@@ -304,4 +310,95 @@ fn deriveAddr(@builtin(global_invocation_id) gid: vec3<u32>) {
   deriveChild2(&keys, &keysPub, 0, 0, prefix);
 
   for (var i: u32 = 0; i < 16; i++) { output[gid.x * 16u + i] = keys[i]; }
+}
+
+fn deriveChildSolana(keys: ptr<function, array<u32, 16>>, coin: u32) {
+  var key: array<u32, 16>;
+  var data: array<u32, 32>;
+  for (var i = 8; i < 16; i++) { key[i] = 0; }
+  for (var i = 0; i < 8; i++) { key[i] = keys[i+8]; }
+  for (var i = 0; i < 32; i++) { data[i] = 0; }
+  setByteArr(&data, 0, 0);
+  for (var i = 0u; i < 32; i++) {
+    setByteArr(&data, i+1, getByteArr(keys, i));
+  }
+  setByteArr(&data, 33, 128);
+  setByteArr(&data, 34, 0);
+  setByteArr(&data, 35, coin >> 8);
+  setByteArr(&data, 36, coin & 0xffu);
+
+  hmacSha512(&key, &data, 37, keys);
+}
+
+fn clampEd25519Scalar(keys: ptr<function, array<u32, 16>>) {
+  var b = getByteArr(keys, 0);
+  setByteArr2(keys, 0, b & 248);
+  b = getByteArr(keys, 31);
+  b = (b & 127) | 64;
+  setByteArr2(keys, 31, b);
+}
+
+
+fn greaterOrEq(keys: ptr<function, array<u32, 16>>, big: array<u32, 8>) -> bool {
+  for (var i = 0; i < 8; i++) {
+    if (keys[i] > big[i]) { return true; }
+    if (keys[i] < big[i]) { return false; }
+  }
+  return true;
+}
+fn reduceByEdwardsModule(keys: ptr<function, array<u32, 16>>) {
+  var NInv = array<u32, 8>(0xefffffff, 0xffffffff, 0xffffffff, 0xffffffff,
+    0xeb210621, 0x5d086329, 0xa7ed9ce5, 0xa30a2c13);
+  while (greaterOrEq(keys, array<u32, 8>(0x10000000, 0, 0, 0, 0x14def9de, 0xa2f79cd6, 0x5812631a, 0x5cf5d3ed))) {
+    var carry: u32 = 0;
+    for (var i = 7; i >= 0; i--) {
+      var a = NInv[i];
+      var b = keys[i];
+      var c = a + b;
+      var carry1 = select(0u, 1u, c < a);
+      c = c + carry;
+      var carry2 = select(0u, 1u, c < carry);
+      carry = carry1 + carry2;
+      keys[i] = c;
+    }
+  }
+}
+
+fn swap_bytes_u32(value: u32) -> u32 {
+    return ((value & 0x000000FFu) << 24u) |
+           ((value & 0x0000FF00u) << 8u)  |
+           ((value & 0x00FF0000u) >> 8u)  |
+           ((value & 0xFF000000u) >> 24u);
+}
+
+@compute @workgroup_size(WORKGROUP_SIZE)
+fn deriveSolana(@builtin(global_invocation_id) gid: vec3<u32>) {
+  var IV = array<u32,16>(
+    0x6a09e667, 0xf3bcc908, 0xbb67ae85, 0x84caa73b,
+    0x3c6ef372, 0xfe94f82b, 0xa54ff53a, 0x5f1d36f1,
+    0x510e527f, 0xade682d1, 0x9b05688c, 0x2b3e6c1f,
+    0x1f83d9ab, 0xfb41bd6b, 0x5be0cd19, 0x137e2179,
+  );
+  var keys: array<u32, 16>;
+  //                             "ed25519 seed"
+  deriveSeed(&keys, array<u32, 3>(0x65643235, 0x35313920, 0x73656564), gid.x * 16u);
+  deriveChildSolana(&keys, 44);
+  deriveChildSolana(&keys, 501);
+  deriveChildSolana(&keys, 0);
+  deriveChildSolana(&keys, 0);
+  var data: array<u32, 32>;
+  for (var i = 0; i < 32; i++) { data[i] = 0; }
+  for (var i = 0; i < 8; i++) { data[i] = keys[i]; }
+  setByteArr(&data, 32, 0x80);
+  setByteArr(&data, 127, (32 & 0x1f) << 3);
+  setByteArr(&data, 126, (32 >> 5) & 0xff);
+  sha512(&data, &keys, &IV);
+  clampEd25519Scalar(&keys);
+  for (var i: u32 = 0; i < 4; i++) {
+    var tmp = keys[7u - i];
+    keys[7u - i] = swap_bytes_u32(keys[i]);
+    keys[i] = swap_bytes_u32(tmp);
+  }
+  reduceByEdwardsModule(&keys);
+  for (var i: u32 = 0; i < 8; i++) { output[gid.x * 8u + i] = keys[i]; }
 }
