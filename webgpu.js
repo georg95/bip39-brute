@@ -40,7 +40,7 @@ async function buildEntirePipeline({ addrType, MNEMONIC, WORKGROUP_SIZE, buildSh
 
     let secp256k1Code = (await fetch('wgsl/secp256k1.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
     console.time('[COMPILE] secp256k1');
-    const secp256k1Shader = await buildShader(secp256k1Code, 'main', WORKGROUP_SIZE * 8)
+    const secp256k1Shader = await buildShader(secp256k1Code, 'main', WORKGROUP_SIZE)
     console.timeEnd('[COMPILE] secp256k1');
     shaders.push(secp256k1Shader)
     swapBuffers()

@@ -33,7 +33,7 @@ async function brutePasswordGPU() {
     
     const batchSize = 1024 * 32
     const WORKGROUP_SIZE = 64
-    const { name, clean, inference, buildShader, swapBuffers } = await webGPUinit({ BUF_SIZE: batchSize*128 })
+    const { name, clean, inference, buildShader, swapBuffers } = await webGPUinit({ eccType: 'secp256k1', BUF_SIZE: batchSize*128 })
     const PASSWORD_LISTS = [
       { url: 'forced-browsing/all.txt', filePasswords: 43135 },
       { url: 'usernames.txt', filePasswords: 403335 },

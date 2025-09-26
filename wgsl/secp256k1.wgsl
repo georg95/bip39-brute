@@ -22,6 +22,17 @@ fn store26x10(a: ptr<function, array<u32, 10>>, offset: u32) {
     output[offset] = (a[8] >> 16) | (a[9] << 10);
 }
 
+fn store26x10_fn(out: ptr<function, array<u32, 8>>, a: ptr<function, array<u32, 10>>) {
+    out[0] = a[0] | (a[1] << 26);
+    out[1] = (a[1] >> 6) | (a[2] << 20);
+    out[2] = (a[2] >> 12) | (a[3] << 14);
+    out[3] = (a[3] >> 18) | (a[4] << 8);
+    out[4] = (a[4] >> 24) | (a[5] << 2) | (a[6] << 28);
+    out[5] = (a[6] >> 4) | (a[7] << 22);
+    out[6] = (a[7] >> 10) | (a[8] << 16);
+    out[7] = (a[8] >> 16) | (a[9] << 10);
+}
+
 struct u64 { hi: u32, lo: u32 };
 
 // not full formula, relying on a*d + b*c not overflowing
@@ -583,63 +594,99 @@ fn secp256k1_add(r: ptr<function, normalPoint>, a: ptr<function, normalPoint>, b
     }
     r.infinity = mnormtozero(&r.z);
 }
-fn minv(r: ptr<function, array<u32, 10>>) {
-    var x2: array<u32, 10>;
-    var x3: array<u32, 10>;
-    var x6: array<u32, 10>;
-    var x9: array<u32, 10>;
-    var x11: array<u32, 10>;
-    var x22: array<u32, 10>;
-    var x44: array<u32, 10>;
-    var x88: array<u32, 10>;
-    var x176: array<u32, 10>;
-    var x220: array<u32, 10>;
-    var x223: array<u32, 10>;
-    var t1: array<u32, 10>;
 
-    copy(&x2, r);
-    msqr2(&x2);
-    mmul(&x2, r);
-    copy(&x3, &x2);
-    msqr2(&x3);
-    mmul(&x3, r);
 
-    copy(&x6, &x3);
-    for (var j=0; j<3; j++) { msqr2(&x6); }
-    mmul(&x6, &x3);
-    copy(&x9, &x6);
-    for (var j=0; j<3; j++) { msqr2(&x9); }
-    mmul(&x9, &x3);
-    copy(&x11, &x9);
-    for (var j=0; j<2; j++) { msqr2(&x11); }
-    mmul(&x11, &x2);
-    copy(&x22, &x11);
-    for (var j=0; j<11; j++) { msqr2(&x22); }
-    mmul(&x22, &x11);
-    copy(&x44, &x22);
-    for (var j=0; j<22; j++) { msqr2(&x44); }
-    mmul(&x44, &x22);
-    copy(&x88, &x44);
-    for (var j=0; j<44; j++) { msqr2(&x88); }
-    mmul(&x88, &x44);
-    copy(&x176, &x88);
-    for (var j=0; j<88; j++) { msqr2(&x176); }
-    mmul(&x176, &x88);
-    copy(&x220, &x176);
-    for (var j=0; j<44; j++) { msqr2(&x220); }
-    mmul(&x220, &x44);
-    copy(&x223, &x220);
-    for (var j=0; j<3; j++) { msqr2(&x223); }
-    mmul(&x223, &x3);
-    copy(&t1, &x223);
-    for (var j=0; j<23; j++) { msqr2(&t1); }
-    mmul(&t1, &x22);
-    for (var j=0; j<5; j++) { msqr2(&t1); }
-    mmul(&t1, r);
-    for (var j=0; j<3; j++) { msqr2(&t1); }
-    mmul(&t1, &x2);
-    for (var j=0; j<2; j++) { msqr2(&t1); }
-    mmul(r, &t1);
+fn mp_shr_extra(r: ptr<function, array<u32, 8>>, e: u32) -> u32 {
+  r[0] = (r[1] << 31) | (r[0] >> 1);
+  r[1] = (r[2] << 31) | (r[1] >> 1);
+  r[2] = (r[3] << 31) | (r[2] >> 1);
+  r[3] = (r[4] << 31) | (r[3] >> 1);
+  r[4] = (r[5] << 31) | (r[4] >> 1);
+  r[5] = (r[6] << 31) | (r[5] >> 1);
+  r[6] = (r[7] << 31) | (r[6] >> 1);
+  r[7] = (e << 31) | (r[7] >> 1);
+  return e >> 1;
+}
+
+fn mp_shr(r: ptr<function, array<u32, 8>>) {
+  r[0] = (r[1] << 31) | (r[0] >> 1);
+  r[1] = (r[2] << 31) | (r[1] >> 1);
+  r[2] = (r[3] << 31) | (r[2] >> 1);
+  r[3] = (r[4] << 31) | (r[3] >> 1);
+  r[4] = (r[5] << 31) | (r[4] >> 1);
+  r[5] = (r[6] << 31) | (r[5] >> 1);
+  r[6] = (r[7] << 31) | (r[6] >> 1);
+  r[7] >>= 1;
+}
+
+fn mp_add(r: ptr<function, array<u32, 8>>, a: ptr<function, array<u32, 8>>) -> u32 {
+  var c = 0u;
+  for (var i = 0; i < 8; i++) {
+    r[i] += a[i] + c;
+    c = select(select(0u, 1u, r[i] < a[i]), c, r[i] == a[i]);
+  }
+  return c;
+}
+
+fn mp_sub(r: ptr<function, array<u32, 8>>, b: ptr<function, array<u32, 8>>) -> u32 {
+  var t = 0u;
+  var c = 0u;
+  for (var i = 0; i < 8; i++) {
+    t = r[i] - b[i] - c;
+    c = select(select(0u, 1u, t > r[i]), c, t == r[i]);
+    r[i] = t;
+  }
+  return c;
+}
+
+fn mp_gte(a: ptr<function, array<u32, 8>>, b: ptr<function, array<u32, 8>>) -> bool {
+  var l = 0u;
+  var g = 0u;
+  for (var i = 0u; i < 8u; i++) {
+    if (a[i] < b[i]) { l |= (1u << i); }
+    if (a[i] > b[i]) { g |= (1u << i); }
+  }
+  return g >= l;
+}
+
+fn minv(r10: ptr<function, array<u32, 10>>) {
+  var P = array<u32, 8>(0xfffffc2fu, 0xfffffffeu, 0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu);
+  var A: array<u32, 8>;
+  var C: array<u32, 8>;
+  var v: array<u32, 8>;
+  var r: array<u32, 8>;
+  var extraA = 0u;
+  var extraC = 0u;
+  for (var i = 0; i < 8; i++) { A[i] = 0; }
+  for (var i = 0; i < 8; i++) { C[i] = 0; }
+  A[0] = 1;
+  for (var i = 0; i < 8; i++) { v[i] = P[i]; }
+  store26x10_fn(&r, r10);
+  while (r[0] != 0 || r[1] != 0 || r[2] != 0 || r[3] != 0 || r[4] != 0 || r[5] != 0 || r[6] != 0 || r[7] != 0) {
+    while ((r[0] & 1) == 0) {
+      mp_shr(&r);
+      if ((A[0] & 1) != 0) { extraA += mp_add(&A, &P); }
+      extraA = mp_shr_extra(&A, extraA);
+    }
+    while ((v[0] & 1) == 0) {
+      mp_shr(&v);
+      if ((C[0] & 1) != 0) { extraC += mp_add(&C, &P); }
+      extraC = mp_shr_extra(&C, extraC);
+    }
+    if (mp_gte(&r, &v)) {
+      mp_sub(&r, &v);
+      extraA += extraC + mp_add(&A, &C);
+    } else {
+      mp_sub(&v, &r);
+      extraC += extraA + mp_add(&C, &A);
+    }
+  }
+  while (extraC != 0 || mp_gte(&C, &P)) {
+    extraC -= mp_sub(&C, &P);
+  }
+  for (var i = 0; i < 8; i++) { r[i] = P[i]; }
+  mp_sub(&r, &C);
+  load26x10(&r, r10);
 }
 
 fn loadCompPt(p: ptr<function, affinePoint>, index: u32) {
@@ -694,35 +741,6 @@ fn secp256k1_mul(gidX: u32) -> normalPoint {
   return p;
 }
 
-fn toAffineBatch(
-  ptA: ptr<function, array<affinePoint, 8>>,
-  p: ptr<function, array<normalPoint, 8>>) {
-    var acc: array<u32, 10>;
-    set1(&acc);
-    var scratch: array<array<u32, 10>, 9>;
-    copy(&scratch[0], &acc);
-
-    for (var i = 0; i < 8; i++) {
-      mmul(&acc, &p[i].z);
-      copy(&scratch[i+1], &acc);
-    }
-
-    minv(&acc);
-
-    var zinv: array<u32, 10>;
-    var z2: array<u32, 10>;
-    var z3: array<u32, 10>;
-    for (var i = 7; i >= 0; i--) {
-      mmul2(&zinv, &scratch[i], &acc);
-      mmul(&acc, &p[i].z);
-      copy(&z2, &zinv);
-      msqr2(&z2);
-      mmul2(&z3, &zinv, &z2);
-      mmul2(&ptA[i].x, &p[i].x, &z2);
-      mmul2(&ptA[i].y, &p[i].y, &z3);
-    }
-}
-
 fn storePt(gidX: u32, ptA: ptr<function, affinePoint>) {
   for (var i: u32 = 0; i < 16; i++) { output[gidX * 32u + i] = input[gidX * 16u + i]; }
   store26x10(&ptA.x, gidX * 32u + 16u);
@@ -735,16 +753,15 @@ fn storePt(gidX: u32, ptA: ptr<function, affinePoint>) {
 
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  var p: array<normalPoint, 8>;
-  var ptA: array<affinePoint, 8>;
-
-  for (var i = 0u; i < 8u; i++) {
-    p[i] = secp256k1_mul(gid.x*8 + i);
-  }
-
-  toAffineBatch(&ptA, &p);
-
-  for (var i = 0u; i < 8u; i++) {
-    storePt(gid.x*8+i, &ptA[i]);
-  }
+  var ptA: affinePoint;
+  var p = secp256k1_mul(gid.x);
+  var z2: array<u32, 10>;
+  var z3: array<u32, 10>;
+  minv(&p.z);
+  copy(&z2, &p.z);
+  msqr2(&z2);
+  mmul2(&z3, &p.z, &z2);
+  mmul2(&ptA.x, &p.x, &z2);
+  mmul2(&ptA.y, &p.y, &z3);
+  storePt(gid.x, &ptA);
 }
