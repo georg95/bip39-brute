@@ -94,6 +94,19 @@ function hash160ToWGSLArray(hash160List) {
     ).join(',\n')
 }
 
+function solanaPkListToWGSLArray(publicKeyList) {
+    function valueLE(publicKey, x) {
+        return '0x'+(((publicKey[x*4 + 3] << 24) |
+            (publicKey[x*4 + 2] << 16) |
+            (publicKey[x*4 + 1] << 8) | 
+            publicKey[x*4]) >>> 0).toString(16)+'u'
+    }
+    const arr = Array(8).fill(0)
+    return publicKeyList.map(publicKey => 
+        `array<u32, 8>(${arr.map((_, i) => valueLE(publicKey, i)).join(', ')})`
+    ).join(',\n')
+}
+
 async function webGPUinit({ BUF_SIZE, eccType, adapter, device }) {
     assert(navigator.gpu, 'Browser not support WebGPU')
     assert(BUF_SIZE, 'no BUF_SIZE passed')

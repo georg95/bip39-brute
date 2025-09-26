@@ -400,17 +400,6 @@ fn swap_bytes_u32(value: u32) -> u32 {
            ((value & 0xFF000000u) >> 24u);
 }
 
-fn store26x10_out(a: ptr<function, array<u32, 10>>, offset: u32) {
-    output[offset + 0u] = swap_bytes_u32(a[0] | (a[1] << 26));
-    output[offset + 1u] = swap_bytes_u32((a[1] >> 6) | (a[2] << 19));
-    output[offset + 2u] = swap_bytes_u32((a[2] >> 13) | (a[3] << 13));
-    output[offset + 3u] = swap_bytes_u32((a[3] >> 19) | (a[4] << 6));
-    output[offset + 4u] = swap_bytes_u32(a[5] | (a[6] << 25));
-    output[offset + 5u] = swap_bytes_u32((a[6] >> 7) | (a[7] << 19));
-    output[offset + 6u] = swap_bytes_u32((a[7] >> 13) | (a[8] << 12));
-    output[offset + 7u] = swap_bytes_u32((a[8] >> 20) | (a[9] << 6));
-}
-
 fn loadCompPt(p: ptr<function, affinePoint>, index: u32) {
   var tmp: array<u32, 8>;
   for (var i = 0u; i < 8; i++) {
@@ -469,7 +458,7 @@ fn ed25519_mul(gidX: u32) -> normalPoint {
   set0pt(&ptTmp);
 
   var privKey: array<u32, 8>;
-  for (var i: u32 = 0; i < 8; i++) { privKey[i] = input[gidX * 16u + 7u - i]; }
+  for (var i: u32 = 0; i < 8; i++) { privKey[i] = input[gidX * 8u + 7u - i]; }
   let mask: u32 = 0xffffu;
   var carry: u32 = 0u;
   for (var w = 0u; w < 16; w++) {
@@ -495,15 +484,35 @@ fn ed25519_mul(gidX: u32) -> normalPoint {
   return p;
 }
 
+const CHECK = array<array<u32, 8>, CHECK_COUNT>(
+    CHECK_KEYS
+);
+
+fn checkPublicKey(a: ptr<function, array<u32, 10>>, gidX: u32) {
+    for (var i = 0; i < CHECK_COUNT; i++) {
+        if ((a[0] | (a[1] << 26)) == CHECK[i][0] &&
+            ((a[1] >> 6) | (a[2] << 19)) == CHECK[i][1] &&
+            ((a[2] >> 13) | (a[3] << 13)) == CHECK[i][2] &&
+            ((a[3] >> 19) | (a[4] << 6)) == CHECK[i][3] &&
+            (a[5] | (a[6] << 25)) == CHECK[i][4] &&
+            ((a[6] >> 7) | (a[7] << 19)) == CHECK[i][5] &&
+            ((a[7] >> 13) | (a[8] << 12)) == CHECK[i][6] &&
+            ((a[8] >> 20) | (a[9] << 6)) == CHECK[i][7]) {
+            output[0] = gidX;
+        }
+    }
+}
+
 @group(0) @binding(0) var<storage, read> input: array<u32>;
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;
 @group(0) @binding(2) var<storage, read> prec_table: array<u32>;
 
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  var tmp: array<u32, 10>;
+  if (gid.x == 0) { output[0] = 0xffffffffu; }
   var p: normalPoint = ed25519_mul(gid.x);
   minv(&p.Z);
-  var tmp: array<u32, 10>;
   mmul(&tmp, &p.Y, &p.Z);
-  store26x10_out(&tmp, gid.x*8);
+  checkPublicKey(&tmp, gid.x);
 }
