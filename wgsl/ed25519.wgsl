@@ -383,25 +383,32 @@ fn load26x10(inp: ptr<function, array<u32, 8>>, out: ptr<function, array<u32, 10
 }
 
 fn store26x10(out: ptr<function, array<u32, 8>>, inp: ptr<function, array<u32, 10>>) {
-    out[7] = inp[0] | (inp[1] << 26);
-    out[6] = (inp[1] >> 6) | (inp[2] << 19);
-    out[5] = (inp[2] >> 13) | (inp[3] << 13);
-    out[4] = (inp[3] >> 19) | (inp[4] << 6);
-    out[3] = inp[5] | (inp[6] << 25);
-    out[2] = (inp[6] >> 7) | (inp[7] << 19);
-    out[1] = (inp[7] >> 13) | (inp[8] << 12);
-    out[0] = (inp[8] >> 20) | (inp[9] << 6);
+    out[0] = inp[0] | (inp[1] << 26);
+    out[1] = (inp[1] >> 6) | (inp[2] << 19);
+    out[2] = (inp[2] >> 13) | (inp[3] << 13);
+    out[3] = (inp[3] >> 19) | (inp[4] << 6);
+    out[4] = inp[5] | (inp[6] << 25);
+    out[5] = (inp[6] >> 7) | (inp[7] << 19);
+    out[6] = (inp[7] >> 13) | (inp[8] << 12);
+    out[7] = (inp[8] >> 20) | (inp[9] << 6);
+}
+
+fn swap_bytes_u32(value: u32) -> u32 {
+    return ((value & 0x000000FFu) << 24u) |
+           ((value & 0x0000FF00u) << 8u)  |
+           ((value & 0x00FF0000u) >> 8u)  |
+           ((value & 0xFF000000u) >> 24u);
 }
 
 fn store26x10_out(a: ptr<function, array<u32, 10>>, offset: u32) {
-    output[offset + 7u] = (*a)[0] | ((*a)[1] << 26);
-    output[offset + 6u] = ((*a)[1] >> 6) | ((*a)[2] << 19);
-    output[offset + 5u] = ((*a)[2] >> 13) | ((*a)[3] << 13);
-    output[offset + 4u] = ((*a)[3] >> 19) | ((*a)[4] << 6);
-    output[offset + 3u] = (*a)[5] | ((*a)[6] << 25);
-    output[offset + 2u] = ((*a)[6] >> 7) | ((*a)[7] << 19);
-    output[offset + 1u] = ((*a)[7] >> 13) | ((*a)[8] << 12);
-    output[offset + 0u] = ((*a)[8] >> 20) | ((*a)[9] << 6);
+    output[offset + 0u] = swap_bytes_u32(a[0] | (a[1] << 26));
+    output[offset + 1u] = swap_bytes_u32((a[1] >> 6) | (a[2] << 19));
+    output[offset + 2u] = swap_bytes_u32((a[2] >> 13) | (a[3] << 13));
+    output[offset + 3u] = swap_bytes_u32((a[3] >> 19) | (a[4] << 6));
+    output[offset + 4u] = swap_bytes_u32(a[5] | (a[6] << 25));
+    output[offset + 5u] = swap_bytes_u32((a[6] >> 7) | (a[7] << 19));
+    output[offset + 6u] = swap_bytes_u32((a[7] >> 13) | (a[8] << 12));
+    output[offset + 7u] = swap_bytes_u32((a[8] >> 20) | (a[9] << 6));
 }
 
 fn loadCompPt(p: ptr<function, affinePoint>, index: u32) {
@@ -494,19 +501,9 @@ fn ed25519_mul(gidX: u32) -> normalPoint {
 
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-
-  // var p = ed25519_mul(gid.x);
-  // store26x10(&p.X, gid.x*32);
-  // store26x10(&p.Y, gid.x*32+8);
-  // store26x10(&p.Z, gid.x*32+16);
-  // store26x10(&p.T, gid.x*32+24);
-
-  var x: array<u32, 10>;
-  var tmp: array<u32, 8>;
-  for (var i = 0u; i < 8; i++) {
-    tmp[i] = input[i];
-  }
-  load26x10(&tmp, &x);
-  minv(&x);
-  store26x10_out(&x, 0);
+  var p: normalPoint = ed25519_mul(gid.x);
+  minv(&p.Z);
+  var tmp: array<u32, 10>;
+  mmul(&tmp, &p.Y, &p.Z);
+  store26x10_out(&tmp, gid.x*8);
 }

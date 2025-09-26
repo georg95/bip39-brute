@@ -181,17 +181,11 @@ async function runBenchmark(options) {
                 fail('❌ secp256k1 FAILED')
             }
             if (mode === 'ed25519' && (
-                u32arrToHex(out.slice(0, 8)) !== '38e0bb5c899bb7eee04e6d1c6e7de1b978a9021356ffbb1f17447da3b3fe2dc9'// ||
-                // u32arrToHex(out.slice(8, 16)) !== '1a2576d890c125eac4dfb7a779132d558a58821392e5643667e6c605b66e6ffc' ||
-                // u32arrToHex(out.slice(16, 24)) !== '4a51aa1e20ffda944667a1130e6ca49fbbd9880bd3d9834e6c8b3713cf333393' ||
-                // u32arrToHex(out.slice(24, 32)) !== '7ea922710a862d30510eaae9c03d1d2cbf13a80dd276847aa84d56e117b9cd8d'
+                u32arrToHex(out.slice(0, 8)) !== u8arrToHex(base58Decode('HDxSyFTFenjCwLRg3VVdm3jD4zyTf1ZStcG1TmiQC6u9'))
             )) {
                 fail('❌ ed25519 FAILED')
-                console.log('exp:', '38e0bb5c899bb7eee04e6d1c6e7de1b978a9021356ffbb1f17447da3b3fe2dc9')
-                console.log('G.x:', u32arrToHex(out.slice(0, 8)))
-                // console.log('G.y:', u32arrToHex(out.slice(8, 16)))
-                // console.log('G.z:', u32arrToHex(out.slice(16, 24)))
-                // console.log('G.t:', u32arrToHex(out.slice(24, 32)))
+                console.log('Expected  :', u8arrToHex(base58Decode('HDxSyFTFenjCwLRg3VVdm3jD4zyTf1ZStcG1TmiQC6u9')))
+                console.log('Public key:', u32arrToHex(out.slice(0, 8)))
             }
             if (mode === 'solana' && u32arrToHex(out.slice(0, 8)) !== ED25519_PRIVKEY) {
                 fail('❌ solana FAILED')
@@ -215,6 +209,33 @@ async function runBenchmark(options) {
     }
     clean()
 }
+
+function base58Decode(str) {
+  const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  const bytes = [0];
+  for (let i = 0; i < str.length; i++) {
+    const char = str[i];
+    const value = alphabet.indexOf(char);
+    if (value === -1) return null;
+    let carry = value;
+    for (let j = 0; j < bytes.length; j++) {
+      carry += bytes[j] * 58;
+      bytes[j] = carry & 0xff;
+      carry >>= 8;
+    }
+    while (carry > 0) {
+      bytes.push(carry & 0xff);
+      carry >>= 8;
+    }
+  }
+  let zeros = 0;
+  while (str[zeros] === '1') zeros++;
+  const result = new Uint8Array(zeros + bytes.length);
+  for (let i = 0; i < bytes.length; i++) {
+    result[result.length - 1 - i] = bytes[i];
+  }
+  return result;
+}
 function hexToUint8Array(hexString) {
     const bytes = [];
     for (let i = 0; i < hexString.length; i += 2) {
@@ -234,6 +255,9 @@ function bigTo32Array(bInt) {
 }
 function u32arrToHex(u32arr) {
     return Array.from(u32arr).map(x => x.toString(16).padStart(8,'0')).join('');
+}
+function u8arrToHex(u8arr) {
+    return Array.from(u8arr).map(x => x.toString(16).padStart(2,'0')).join('');
 }
 </script>
 </html>
