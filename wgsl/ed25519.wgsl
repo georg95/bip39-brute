@@ -202,46 +202,99 @@ fn ed25519_add(r: ptr<function, normalPoint>, p: ptr<function, normalPoint>, q: 
   mmul(&r.Z, &F, &G);
 }
 
-// void fe_invert(fe out, const fe z) {
-//     fe t0;
-//     fe t1;
-//     fe t2;
-//     fe t3;
-//     int i;
-//     fe_sq(t0, z);
-//     for (i = 1; i < 1; ++i) { fe_sq(t0, t0); }
-//     fe_sq(t1, t0);
-//     for (i = 1; i < 2; ++i) { fe_sq(t1, t1); }
-//     fe_mul(t1, z, t1);
-//     fe_mul(t0, t0, t1);
-//     fe_sq(t2, t0);
-//     for (i = 1; i < 1; ++i) { fe_sq(t2, t2); }
-//     fe_mul(t1, t1, t2);
-//     fe_sq(t2, t1);
-//     for (i = 1; i < 5; ++i) { fe_sq(t2, t2); }
-//     fe_mul(t1, t2, t1);
-//     fe_sq(t2, t1);
-//     for (i = 1; i < 10; ++i) { fe_sq(t2, t2); }
-//     fe_mul(t2, t2, t1);
-//     fe_sq(t3, t2);
-//     for (i = 1; i < 20; ++i) { fe_sq(t3, t3); }
-//     fe_mul(t2, t3, t2);
-//     fe_sq(t2, t2);
-//     for (i = 1; i < 10; ++i) { fe_sq(t2, t2); }
-//     fe_mul(t1, t2, t1);
-//     fe_sq(t2, t1);
-//     for (i = 1; i < 50; ++i) { fe_sq(t2, t2); }
-//     fe_mul(t2, t2, t1);
-//     fe_sq(t3, t2);
-//     for (i = 1; i < 100; ++i) { fe_sq(t3, t3); }
-//     fe_mul(t2, t3, t2);
-//     fe_sq(t2, t2);
-//     for (i = 1; i < 50; ++i) { fe_sq(t2, t2); }
-//     fe_mul(t1, t2, t1);
-//     fe_sq(t1, t1);
-//     for (i = 1; i < 5; ++i) { fe_sq(t1, t1); }
-//     fe_mul(out, t1, t0);
-// }
+
+fn mp_shr_extra(r: ptr<function, array<u32, 8>>, e: u32) -> u32 {
+  r[0] = (r[1] << 31) | (r[0] >> 1);
+  r[1] = (r[2] << 31) | (r[1] >> 1);
+  r[2] = (r[3] << 31) | (r[2] >> 1);
+  r[3] = (r[4] << 31) | (r[3] >> 1);
+  r[4] = (r[5] << 31) | (r[4] >> 1);
+  r[5] = (r[6] << 31) | (r[5] >> 1);
+  r[6] = (r[7] << 31) | (r[6] >> 1);
+  r[7] = (e << 31) | (r[7] >> 1);
+  return e >> 1;
+}
+
+fn mp_shr(r: ptr<function, array<u32, 8>>) {
+  r[0] = (r[1] << 31) | (r[0] >> 1);
+  r[1] = (r[2] << 31) | (r[1] >> 1);
+  r[2] = (r[3] << 31) | (r[2] >> 1);
+  r[3] = (r[4] << 31) | (r[3] >> 1);
+  r[4] = (r[5] << 31) | (r[4] >> 1);
+  r[5] = (r[6] << 31) | (r[5] >> 1);
+  r[6] = (r[7] << 31) | (r[6] >> 1);
+  r[7] >>= 1;
+}
+
+fn mp_add(r: ptr<function, array<u32, 8>>, a: ptr<function, array<u32, 8>>) -> u32 {
+  var c = 0u;
+  for (var i = 0; i < 8; i++) {
+    r[i] += a[i] + c;
+    c = select(select(0u, 1u, r[i] < a[i]), c, r[i] == a[i]);
+  }
+  return c;
+}
+
+fn mp_sub(r: ptr<function, array<u32, 8>>, b: ptr<function, array<u32, 8>>) -> u32 {
+  var t = 0u;
+  var c = 0u;
+  for (var i = 0; i < 8; i++) {
+    t = r[i] - b[i] - c;
+    c = select(select(0u, 1u, t > r[i]), c, t == r[i]);
+    r[i] = t;
+  }
+  return c;
+}
+
+fn mp_gte(a: ptr<function, array<u32, 8>>, b: ptr<function, array<u32, 8>>) -> bool {
+  var l = 0u;
+  var g = 0u;
+  for (var i = 0u; i < 8u; i++) {
+    if (a[i] < b[i]) { l |= (1u << i); }
+    if (a[i] > b[i]) { g |= (1u << i); }
+  }
+  return g >= l;
+}
+
+fn minv(r10: ptr<function, array<u32, 10>>) {
+  var P = array<u32, 8>(0xffffffedu, 0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu, 0x7fffffffu);
+  var A: array<u32, 8>;
+  var C: array<u32, 8>;
+  var v: array<u32, 8>;
+  var r: array<u32, 8>;
+  var extraA = 0u;
+  var extraC = 0u;
+  for (var i = 0; i < 8; i++) { A[i] = 0; }
+  for (var i = 0; i < 8; i++) { C[i] = 0; }
+  A[0] = 1;
+  for (var i = 0; i < 8; i++) { v[i] = P[i]; }
+  store26x10(&r, r10);
+  while (r[0] != 0 || r[1] != 0 || r[2] != 0 || r[3] != 0 || r[4] != 0 || r[5] != 0 || r[6] != 0 || r[7] != 0) {
+    while ((r[0] & 1) == 0) {
+      mp_shr(&r);
+      if ((A[0] & 1) != 0) { extraA += mp_add(&A, &P); }
+      extraA = mp_shr_extra(&A, extraA);
+    }
+    while ((v[0] & 1) == 0) {
+      mp_shr(&v);
+      if ((C[0] & 1) != 0) { extraC += mp_add(&C, &P); }
+      extraC = mp_shr_extra(&C, extraC);
+    }
+    if (mp_gte(&r, &v)) {
+      mp_sub(&r, &v);
+      extraA += extraC + mp_add(&A, &C);
+    } else {
+      mp_sub(&v, &r);
+      extraC += extraA + mp_add(&C, &A);
+    }
+  }
+  while (extraC != 0 || mp_gte(&C, &P)) {
+    extraC -= mp_sub(&C, &P);
+  }
+  for (var i = 0; i < 8; i++) { r[i] = P[i]; }
+  mp_sub(&r, &C);
+  load26x10(&r, r10);
+}
 
 const reduce_mask_25: u32 = (1 << 25) - 1;
 const reduce_mask_26: u32 = (1 << 26) - 1;
@@ -303,6 +356,19 @@ fn msub_unsafe(out: ptr<function, array<u32, 10>>, a: ptr<function, array<u32, 1
 	out[9] = 0x03fffffe + a[9] - b[9]    ;
 }
 
+fn copy(out: ptr<function, array<u32, 10>>, a: ptr<function, array<u32, 10>>) {
+	out[0] = a[0];
+	out[1] = a[1];
+	out[2] = a[2];
+	out[3] = a[3];
+	out[4] = a[4];
+	out[5] = a[5];
+	out[6] = a[6];
+	out[7] = a[7];
+	out[8] = a[8];
+	out[9] = a[9];
+}
+
 fn load26x10(inp: ptr<function, array<u32, 8>>, out: ptr<function, array<u32, 10>>) {
     out[0] = inp[0] & 0x3FFFFFFu;
     out[1] = (inp[0] >> 26) | ((inp[1] & 0x7FFFFu) << 6);
@@ -316,7 +382,18 @@ fn load26x10(inp: ptr<function, array<u32, 8>>, out: ptr<function, array<u32, 10
     out[9] = (inp[7] >> 6) & 0x1FFFFFFu;
 }
 
-fn store26x10(a: ptr<function, array<u32, 10>>, offset: u32) {
+fn store26x10(out: ptr<function, array<u32, 8>>, inp: ptr<function, array<u32, 10>>) {
+    out[7] = inp[0] | (inp[1] << 26);
+    out[6] = (inp[1] >> 6) | (inp[2] << 19);
+    out[5] = (inp[2] >> 13) | (inp[3] << 13);
+    out[4] = (inp[3] >> 19) | (inp[4] << 6);
+    out[3] = inp[5] | (inp[6] << 25);
+    out[2] = (inp[6] >> 7) | (inp[7] << 19);
+    out[1] = (inp[7] >> 13) | (inp[8] << 12);
+    out[0] = (inp[8] >> 20) | (inp[9] << 6);
+}
+
+fn store26x10_out(a: ptr<function, array<u32, 10>>, offset: u32) {
     output[offset + 7u] = (*a)[0] | ((*a)[1] << 26);
     output[offset + 6u] = ((*a)[1] >> 6) | ((*a)[2] << 19);
     output[offset + 5u] = ((*a)[2] >> 13) | ((*a)[3] << 13);
@@ -417,9 +494,19 @@ fn ed25519_mul(gidX: u32) -> normalPoint {
 
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  var p = ed25519_mul(gid.x);
-  store26x10(&p.X, gid.x*32);
-  store26x10(&p.Y, gid.x*32+8);
-  store26x10(&p.Z, gid.x*32+16);
-  store26x10(&p.T, gid.x*32+24);
+
+  // var p = ed25519_mul(gid.x);
+  // store26x10(&p.X, gid.x*32);
+  // store26x10(&p.Y, gid.x*32+8);
+  // store26x10(&p.Z, gid.x*32+16);
+  // store26x10(&p.T, gid.x*32+24);
+
+  var x: array<u32, 10>;
+  var tmp: array<u32, 8>;
+  for (var i = 0u; i < 8; i++) {
+    tmp[i] = input[i];
+  }
+  load26x10(&tmp, &x);
+  minv(&x);
+  store26x10_out(&x, 0);
 }
