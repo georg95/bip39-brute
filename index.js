@@ -28,12 +28,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function brutePasswordGPU() {
     let stopped = false
+    const { bip39mask, addrHash160list, addrTypes } = await validateInput()
+    const addrType = addrTypes[0]
     window.brute.onclick = () => { stopped = true }
     window.brute.innerText = '🛑 STOP'
     
     const batchSize = 1024 * 32
     const WORKGROUP_SIZE = 64
-    const { name, clean, inference, buildShader, swapBuffers } = await webGPUinit({ eccType: 'secp256k1', BUF_SIZE: batchSize*128 })
+    const { name, clean, inference, buildShader, swapBuffers } = await webGPUinit({
+      eccType: addrType === 'solana' ? 'ed25519' : 'secp256k1', BUF_SIZE: batchSize*128
+    })
     const PASSWORD_LISTS = [
       { url: 'forced-browsing/all.txt', filePasswords: 43135 },
       { url: 'usernames.txt', filePasswords: 403335 },
@@ -49,9 +53,8 @@ async function brutePasswordGPU() {
       { url: 'facebook-firstnames.txt', filePasswords: 4347667 },
     ]
     // PASSWORD_LISTS.sort((a, b) => a.filePasswords - b.filePasswords)
-    const { bip39mask, addrHash160list, addrTypes } = await validateInput()
     const pipeline = await buildEntirePipeline({
-        addrType: addrTypes[0], MNEMONIC: bip39mask, WORKGROUP_SIZE, buildShader, swapBuffers, hashList: addrHash160list
+        addrType, MNEMONIC: bip39mask, WORKGROUP_SIZE, buildShader, swapBuffers, hashList: addrHash160list
     })
     log(`[${name}]\nBruteforce init...`, true)
     let curList = 0
@@ -157,10 +160,19 @@ async function addrToScriptHash(address) {
     if (!decodedData) return null
     const doubleSha256 = await sha256HashSync(await sha256HashSync(decodedData.slice(0, -4)))
     const checksumValid = Array.from(doubleSha256.slice(0, 4)).every((byte, i) => byte === decodedData.slice(-4)[i])
+    if (!checksumValid && isSolanaAddress(decodedData)) {
+      return { hash160: decodedData, type: 'solana' }
+    }
     if (!checksumValid) return null
     const type = { '0': 'p2pkh', '5': 'p2sh', '65': 'tron' }[decodedData[0]]
     if (!type) return null
     return { hash160: decodedData.slice(1, 21), type }
+}
+
+function isSolanaAddress(key) {
+  if (key.length !== 32) { return false }
+  console.warn('TODO: solana address check', key)
+  return true
 }
 
 function hexToUint8Array(hexString) {

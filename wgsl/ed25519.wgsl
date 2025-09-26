@@ -393,13 +393,6 @@ fn store26x10(out: ptr<function, array<u32, 8>>, inp: ptr<function, array<u32, 1
     out[7] = (inp[8] >> 20) | (inp[9] << 6);
 }
 
-fn swap_bytes_u32(value: u32) -> u32 {
-    return ((value & 0x000000FFu) << 24u) |
-           ((value & 0x0000FF00u) << 8u)  |
-           ((value & 0x00FF0000u) >> 8u)  |
-           ((value & 0xFF000000u) >> 24u);
-}
-
 fn loadCompPt(p: ptr<function, affinePoint>, index: u32) {
   var tmp: array<u32, 8>;
   for (var i = 0u; i < 8; i++) {

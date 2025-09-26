@@ -20,6 +20,7 @@ Password: gauffers (usernames.txt password list)
 - [x] Password bruteforce mode
 - [x] Legacy/P2SH/Segwit bitcoin addresses
 - [x] Ethereum/BSC/Tron wallets
+- [ ] Solana wallets
 - [ ] Multiple derivation addresses
 - [ ] Bruteforce settings
 - [ ] Missing words bruteforce mode

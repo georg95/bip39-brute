@@ -30,11 +30,14 @@ async function buildEntirePipeline({ addrType, MNEMONIC, WORKGROUP_SIZE, buildSh
     swapBuffers()
 
     if (addrType === 'solana') {
-        // let ed25519Code = (await fetch('wgsl/ed25519.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
-        // console.time('[COMPILE] ed25519');
-        // shaders.push(await buildShader(ed25519Code, 'main', WORKGROUP_SIZE))
-        // console.timeEnd('[COMPILE] ed25519');
-        // swapBuffers()
+        let ed25519Code = (await fetch('wgsl/ed25519.wgsl').then(r => r.text()))
+          .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
+          .replaceAll('CHECK_COUNT', hashList.length.toString(10))
+          .replaceAll('CHECK_KEYS', solanaPkListToWGSLArray(hashList))
+        console.time('[COMPILE] ed25519');
+        shaders.push(await buildShader(ed25519Code, 'main', WORKGROUP_SIZE))
+        console.timeEnd('[COMPILE] ed25519');
+        swapBuffers()
         return shaders
     }
 
