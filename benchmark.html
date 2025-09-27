@@ -42,9 +42,6 @@ window.benchmark.onclick = async () => {
     assert(window.isSecureContext, 'WebGPU disabled for http:// protocol, works only on https://')
     assert(navigator.gpu, 'Browser not support WebGPU')
     window.benchmark.style.display = 'none'
-    window.output.innerHTML += 'Precompute secp256k1 table... '
-    const start = performance.now()
-    log(`[${((performance.now() - start) / 1000).toFixed(1)}s]`)
     const adapter1 = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" })
     const device1 = await adapter1.requestDevice()
     await runBenchmark({ device: device1, adapter: adapter1 })
@@ -109,13 +106,14 @@ const MNEMONIC_SEED_0 = 'f3aef945a3078fcc058a7da12bcc37df8c0c075d80eac9ce9a5cd0e
 const MNEMONIC_SEED_5 = '53ae6afed8bd85ad9b5603e14ac8e4930c900c3e97c94c6a3d74a6e112a30807a4cf1ad804065107242db26844d49b11ea15e73a2ae7d04358161e040e9f360f'
 
 async function runBenchmark(options) {
-    const MNEMONIC = 'expose census trophy review common rebel ask depend build caught frame accident naive shiver inmate host assault fan tonight accident left useful tongue blood'
-    const passwords = 1024 * 128
-    const { name, clean, inference, buildShader, swapBuffers } =
-        await webGPUinit({...options, eccType: 'ed25519', BUF_SIZE: passwords*128 })
+    const name = options.adapter.info.description || options.adapter.info.vendor
     log(`\n[${name}]\n`)
     window.output.innerHTML += 'Initialize data... '
     const start = performance.now()
+    const MNEMONIC = 'expose census trophy review common rebel ask depend build caught frame accident naive shiver inmate host assault fan tonight accident left useful tongue blood'
+    const passwords = 1024 * 128
+    const { clean, inference, buildShader, swapBuffers } =
+        await webGPUinit({...options, eccType: 'ed25519', BUF_SIZE: passwords*128 })
     const WORKGROUP_SIZE = 64
     // const pipeline = await buildEntirePipeline({
     //     addrType: 'solana', MNEMONIC, buildShader, swapBuffers, WORKGROUP_SIZE,
