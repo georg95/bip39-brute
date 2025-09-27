@@ -112,7 +112,7 @@ async function runBenchmark(options) {
     const MNEMONIC = 'expose census trophy review common rebel ask depend build caught frame accident naive shiver inmate host assault fan tonight accident left useful tongue blood'
     const passwords = 1024 * 128
     const { name, clean, inference, buildShader, swapBuffers } =
-        await webGPUinit({...options, eccType: 'secp256k1', BUF_SIZE: passwords*128 })
+        await webGPUinit({...options, eccType: 'ed25519', BUF_SIZE: passwords*128 })
     log(`\n[${name}]\n`)
     window.output.innerHTML += 'Initialize data... '
     const start = performance.now()
@@ -146,7 +146,7 @@ async function runBenchmark(options) {
         clean()
         failed = true
     }
-    for (let mode of ['secp256k1']) {
+    for (let mode of ['ed25519']) {
         if (mode === 'ed25519') {
             log('\nEd25519:')
             shaders = [await buildShader(ed25519code, 'main', WORKGROUP_SIZE)]

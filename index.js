@@ -160,7 +160,7 @@ async function addrToScriptHash(address) {
     if (!decodedData) return null
     const doubleSha256 = await sha256HashSync(await sha256HashSync(decodedData.slice(0, -4)))
     const checksumValid = Array.from(doubleSha256.slice(0, 4)).every((byte, i) => byte === decodedData.slice(-4)[i])
-    if (!checksumValid && isSolanaAddress(decodedData)) {
+    if (!checksumValid && isSolPubkey(decodedData)) {
       return { hash160: decodedData, type: 'solana' }
     }
     if (!checksumValid) return null
@@ -169,10 +169,32 @@ async function addrToScriptHash(address) {
     return { hash160: decodedData.slice(1, 21), type }
 }
 
-function isSolanaAddress(key) {
-  if (key.length !== 32) { return false }
-  console.warn('TODO: solana address check', key)
-  return true
+function isSolPubkey(key) {
+    const P = 0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffedn;
+    const RM1 = 0x2b8324804fc1df0b2b4d00993dfbd7a72f431806ad2fe478c4ee1b274a0ea0b0n;
+    const D = 0x52036cee2b6ffe738cc740797779e89800700a4d4141d8ab75eb4dca135978a3n;
+    const M = (a, b = P) => (b + a % b) % b;
+    function modExp(base, exponent) {
+        let result = 1n; base = M(base);
+        while (exponent > 0n) {
+            if (exponent % 2n === 1n) { result = M(result * base); }
+            exponent = exponent >> 1n;
+            base = M(base * base);
+        }
+        return result;
+    }
+
+    if (key.length !== 32) return false
+    const y = BigInt('0x'+Array.from(key).map(x => x.toString(16).padStart(2, '0')).reverse().join('')) & ((1n << 255n) - 1n)
+    const u = M(y * y - 1n);
+    const v = M(D * y * y + 1n);
+    let x = M(u * M(v ** 3n) * modExp(u * M(v ** 7n), (P - 5n) / 8n, P)); // (uv³)(uv⁷)^(p-5)/8
+    if (M(v * x * x) === u) {
+        x = (x & 1n) === 1n ? M(-x) : x
+    } else if (M(v * x * x) === M(-u)) {
+        x = M((x * RM1) & 1n) === 1n ? M(-x * RM1) : M(x * RM1)
+    } else { return false }
+    return M(P + M(y * y) - M(x * x)) === M(1n + D * M(M(x * x) * M(y * y)))
 }
 
 function hexToUint8Array(hexString) {
