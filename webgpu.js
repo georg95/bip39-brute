@@ -110,10 +110,9 @@ function solanaPkListToWGSLArray(publicKeyList) {
     ).join(',\n')
 }
 
-async function webGPUinit({ BUF_SIZE, eccType, adapter, device }) {
+async function webGPUinit({ BUF_SIZE, adapter, device }) {
     assert(navigator.gpu, 'Browser not support WebGPU')
     assert(BUF_SIZE, 'no BUF_SIZE passed')
-    const precomputeTable = await precomputeEccTable(eccType)
     if (!adapter && !device) {
         adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })
         device = await adapter.requestDevice() 
@@ -124,8 +123,9 @@ async function webGPUinit({ BUF_SIZE, eccType, adapter, device }) {
         console.log('Cleaned WebGPU device resources')
     })
 
+    const PRECOMPUTE_TABLE_SIZE = (16 * 32768) * (3 * 32)
     const secp256k1PrecomputeBuffer = device.createBuffer({
-        size: precomputeTable.length * 4,
+        size: PRECOMPUTE_TABLE_SIZE,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
     })
 
@@ -144,8 +144,6 @@ async function webGPUinit({ BUF_SIZE, eccType, adapter, device }) {
         size: 4096,
         usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
     });
-
-    device.queue.writeBuffer(secp256k1PrecomputeBuffer, 0, precomputeTable)
 
     function clean() {
         secp256k1PrecomputeBuffer.destroy()
@@ -257,6 +255,10 @@ async function webGPUinit({ BUF_SIZE, eccType, adapter, device }) {
     }
 
     return {
+        async setEccTable(eccType) {
+          const precomputeTable = await precomputeEccTable(eccType)
+          device.queue.writeBuffer(secp256k1PrecomputeBuffer, 0, precomputeTable)
+        },
         name: adapter.info.description || adapter.info.vendor,
         clean,
         swapBuffers() {

@@ -112,8 +112,8 @@ async function runBenchmark(options) {
     const start = performance.now()
     const MNEMONIC = 'expose census trophy review common rebel ask depend build caught frame accident naive shiver inmate host assault fan tonight accident left useful tongue blood'
     const passwords = 1024 * 128
-    const { clean, inference, buildShader, swapBuffers } =
-        await webGPUinit({...options, eccType: 'ed25519', BUF_SIZE: passwords*128 })
+    const { clean, setEccTable, inference, buildShader, swapBuffers } =
+        await webGPUinit({...options, BUF_SIZE: passwords*128 })
     const WORKGROUP_SIZE = 64
     // const pipeline = await buildEntirePipeline({
     //     addrType: 'solana', MNEMONIC, buildShader, swapBuffers, WORKGROUP_SIZE,
@@ -144,9 +144,10 @@ async function runBenchmark(options) {
         clean()
         failed = true
     }
-    for (let mode of ['ed25519']) {
+    for (let mode of ['ed25519', 'secp256k1', 'solana']) {
         if (mode === 'ed25519') {
             log('\nEd25519:')
+            await setEccTable('ed25519')
             shaders = [await buildShader(ed25519code, 'main', WORKGROUP_SIZE)]
             inp = ed25519input
         }
@@ -157,6 +158,7 @@ async function runBenchmark(options) {
         }
         if (mode === 'secp256k1') {
             log('\nSecp256k1:')
+            await setEccTable('secp256k1')
             shaders = [await buildShader(secp256k1Code, 'main', WORKGROUP_SIZE)]
             inp = secp256input
         }
