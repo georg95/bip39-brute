@@ -56,164 +56,133 @@ window.benchmark.onclick = async () => {
     window.benchmark.style.display = ''
 }
 
-function preparePasswordsInput(passwords) {
-    const PASSWORD = 'gauffers'
-    const digits = passwords.toString(10).length
-    const PASS_LEN = Math.ceil((PASSWORD.length + digits + 1) / 4) + 1
-    const inp = new Uint32Array(32 + PASS_LEN * passwords).fill(0)
-    var strbuf = new Uint8Array(inp.buffer, inp.byteOffset, inp.byteLength)
+const TESTS = {
+    'ed25519': async function ({ passwords, WORKGROUP_SIZE }, gpu) {
+        await gpu.setEccTable('ed25519')
+        var pkList = [base58Decode('HDxSyFTFenjCwLRg3VVdm3jD4zyTf1ZStcG1TmiQC6u9')]
+        let ed25519code = (await fetch('wgsl/ed25519.wgsl').then(r => r.text()))
+            .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
+            .replaceAll('CHECK_COUNT', pkList.length.toString(10))
+            .replaceAll('CHECK_KEYS', solanaPkListToWGSLArray(pkList))
+        const shaders = [await gpu.buildShader(ed25519code, 'main', WORKGROUP_SIZE)]
+        const inp = new Uint32Array(8 * passwords)
+        const privKeyFalse = hexToUint32Array('09ffcb448f752fd52d656882451e24a80e4dbbbc0a71ec83b8d3d720503c3484')
+        privKeyFalse[0] = 0;
+        for (let i = 0; i < passwords; i++) {
+            inp.set(privKeyFalse, i*8)
+        }
+        const privKey = hexToUint32Array('09ffcb448f752fd52d656882451e24a80e4dbbbc0a71ec83b8d3d720503c3484')
+        inp.set(privKey, 35*8)
 
-    let passwordOffset = 128 + passwords * 4
-    for (let i = 0; i < passwords; i++) {
-        const curPass = PASSWORD + (i === 35 ? '' : i.toString(10)) + '\n'
-        strbuf.set(new TextEncoder().encode(curPass), passwordOffset)
-        inp[32 + i] = passwordOffset
-        passwordOffset += curPass.length
-    }
-    return inp
-}
-function prepareSecp256input(passwords) {
-    const inp = new Uint32Array(16 * passwords)
-    const privKey = hexToUint32Array('597fc6a34994b21cc9ef71aef1e05b35c6eb693fd9038ca250fb786204b5c552')
-    for (let i = 0; i < passwords; i++) {
-        inp.set(privKey, i*16)
-    }
-    return inp
-}
-const ED25519_PRIVKEY = '09ffcb448f752fd52d656882451e24a80e4dbbbc0a71ec83b8d3d720503c3484'
-function prepareEd25519input(passwords) {
-    const inp = new Uint32Array(8 * passwords)
-    const privKeyFalse = hexToUint32Array(ED25519_PRIVKEY)
-    privKeyFalse[0] = 0x33333333;
-    for (let i = 0; i < passwords; i++) {
-        inp.set(privKeyFalse, i*8)
-    }
-    const privKey = hexToUint32Array(ED25519_PRIVKEY)
-    inp.set(privKey, 35*8)
-    return inp
-}
-const SECP_PUBKEY = 'b63e537acee9c54acaa717904221830ddb7b36a1545894c489165ed352538f57401934fe501d96447efbe1ddb4e5b831f6fe1c0b7239fc0de39b88700cebf64a'
+        return { shaders, inp, check(out) { return out[0] === 35 } }
+    },
+    'secp256k1': async function ({ passwords, WORKGROUP_SIZE }, gpu) {
+        await gpu.setEccTable('secp256k1')
+        let secp256k1Code = (await fetch('wgsl/secp256k1.wgsl').then(r => r.text()))
+            .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
+        const shaders = [await gpu.buildShader(secp256k1Code, 'main', WORKGROUP_SIZE)]
+        const inp = new Uint32Array(16 * passwords)
+        const privKey = hexToUint32Array('597fc6a34994b21cc9ef71aef1e05b35c6eb693fd9038ca250fb786204b5c552')
+        for (let i = 0; i < passwords; i++) {
+            inp.set(privKey, i*16)
+        }
+        return { shaders, inp, check(out) {
+            return u32arrToHex(out.slice(16, 32)) === 'b63e537acee9c54acaa717904221830ddb7b36a1545894c489165ed352538f57401934fe501d96447efbe1ddb4e5b831f6fe1c0b7239fc0de39b88700cebf64a'
+        } }
+    },
+    'solana': async function ({ passwords, WORKGROUP_SIZE }, gpu) {
+        let deriveCode = (await fetch('wgsl/derive_coin.wgsl').then(r => r.text()))
+                .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
+                .replaceAll('NETWORK', 44)
+                .replaceAll('COIN_TYPE', 501)
+        const shaders = [await gpu.buildShader(deriveCode, 'deriveSolana', WORKGROUP_SIZE)]
+        const inp = new Uint32Array(16 * passwords)
+        const seed = hexToUint32Array('2177a1d6e983977c6b8e1b2214da6e61651d878d2c002024d086ee0e50626f0cf3890c740d8c425380397c61395ff2147d49d068be6a68d3e8b775e7a20c20ed')
+        for (let i = 0; i < passwords; i++) {
+            inp.set(seed, i * 16)
+        }
+        return { shaders, inp, check(out) {
+            return u32arrToHex(out.slice(0, 8)) === '09ffcb448f752fd52d656882451e24a80e4dbbbc0a71ec83b8d3d720503c3484'
+        } }
+    },
+    'pbkdf2': async function ({ passwords, MNEMONIC, WORKGROUP_SIZE }, gpu) {
+        let pbkdf2Code = (await fetch('wgsl/pbkdf2_template.wgsl').then(r => r.text()))
+        pbkdf2Code = (await unrolledSha512_wgpu(pbkdf2Code, MNEMONIC))
+            .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
+        const shaders = [await gpu.buildShader(pbkdf2Code, 'main', WORKGROUP_SIZE)]
+        const PASSWORD = 'gauffers'
+        const digits = passwords.toString(10).length
+        const PASS_LEN = Math.ceil((PASSWORD.length + digits + 1) / 4) + 1
+        const inp = new Uint32Array(32 + PASS_LEN * passwords).fill(0)
+        var strbuf = new Uint8Array(inp.buffer, inp.byteOffset, inp.byteLength)
 
-function prepareDeriveSolanaInput(passwords) {
-    const inp = new Uint32Array(16 * passwords)
-    const seed = hexToUint32Array('2177a1d6e983977c6b8e1b2214da6e61651d878d2c002024d086ee0e50626f0cf3890c740d8c425380397c61395ff2147d49d068be6a68d3e8b775e7a20c20ed')
-    for (let i = 0; i < passwords; i++) {
-        inp.set(seed, i * 16)
-    }
-    return inp
+        let passwordOffset = 128 + passwords * 4
+        for (let i = 0; i < passwords; i++) {
+            const curPass = PASSWORD + (i === 35 ? '' : i.toString(10)) + '\n'
+            strbuf.set(new TextEncoder().encode(curPass), passwordOffset)
+            inp[32 + i] = passwordOffset
+            passwordOffset += curPass.length
+        }
+        const MNEMONIC_SEED_0 = 'f3aef945a3078fcc058a7da12bcc37df8c0c075d80eac9ce9a5cd0e468fd29fb7401b8f787c4e47248ce529bfb1b34cee2c0ddb010cb0e169646b490e9e0ddf4'
+        const MNEMONIC_SEED_5 = '53ae6afed8bd85ad9b5603e14ac8e4930c900c3e97c94c6a3d74a6e112a30807a4cf1ad804065107242db26844d49b11ea15e73a2ae7d04358161e040e9f360f'
+
+        return { shaders, inp, check(out) {
+            return (u32arrToHex(out.slice(0, 16)) === MNEMONIC_SEED_0 && u32arrToHex(out.slice(80, 96)) === MNEMONIC_SEED_5)
+        } }
+    },
+    'mnemonic to address': async function ({ passwords, MNEMONIC, WORKGROUP_SIZE }, gpu) {
+        await gpu.setEccTable('secp256k1')
+        const shaders = await buildEntirePipeline({
+            addrType: 'eth', MNEMONIC, WORKGROUP_SIZE, ...gpu,
+            hashList: [hexToUint8Array('9f592002A9216B5eB3B00040df6a9EaE4792A0De')],
+        })
+        const PASSWORD = 'gauffers'
+        const digits = passwords.toString(10).length
+        const PASS_LEN = Math.ceil((PASSWORD.length + digits + 1) / 4) + 1
+        const inp = new Uint32Array(32 + PASS_LEN * passwords).fill(0)
+        var strbuf = new Uint8Array(inp.buffer, inp.byteOffset, inp.byteLength)
+
+        let passwordOffset = 128 + passwords * 4
+        for (let i = 0; i < passwords; i++) {
+            const curPass = PASSWORD + (i === 35 ? '' : i.toString(10)) + '\n'
+            strbuf.set(new TextEncoder().encode(curPass), passwordOffset)
+            inp[32 + i] = passwordOffset
+            passwordOffset += curPass.length
+        }
+        return { shaders, inp, check(out) { return out[0] === 35 } }
+    },
 }
-const MNEMONIC_SEED_0 = 'f3aef945a3078fcc058a7da12bcc37df8c0c075d80eac9ce9a5cd0e468fd29fb7401b8f787c4e47248ce529bfb1b34cee2c0ddb010cb0e169646b490e9e0ddf4'
-const MNEMONIC_SEED_5 = '53ae6afed8bd85ad9b5603e14ac8e4930c900c3e97c94c6a3d74a6e112a30807a4cf1ad804065107242db26844d49b11ea15e73a2ae7d04358161e040e9f360f'
+
 
 async function runBenchmark(options) {
-    const name = options.adapter.info.description || options.adapter.info.vendor
-    log(`\n[${name}]\n`)
-    window.output.innerHTML += 'Initialize data... '
-    const start = performance.now()
+    log(`\n[${options.adapter.info.description || options.adapter.info.vendor}]\n`)
     const MNEMONIC = 'expose census trophy review common rebel ask depend build caught frame accident naive shiver inmate host assault fan tonight accident left useful tongue blood'
     const passwords = 1024 * 128
-    const { clean, setEccTable, inference, buildShader, swapBuffers } =
-        await webGPUinit({...options, BUF_SIZE: passwords*128 })
     const WORKGROUP_SIZE = 64
-    var pkList = [base58Decode('HDxSyFTFenjCwLRg3VVdm3jD4zyTf1ZStcG1TmiQC6u9')]
-    let pbkdf2Code = (await fetch('wgsl/pbkdf2_template.wgsl').then(r => r.text()))
-    pbkdf2Code = (await unrolledSha512_wgpu(pbkdf2Code, MNEMONIC))
-        .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
-    let ed25519code = (await fetch('wgsl/ed25519.wgsl').then(r => r.text()))
-        .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
-        .replaceAll('CHECK_COUNT', pkList.length.toString(10))
-        .replaceAll('CHECK_KEYS', solanaPkListToWGSLArray(pkList))
-    let deriveCode = (await fetch('wgsl/derive_coin.wgsl').then(r => r.text()))
-        .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
-        .replaceAll('NETWORK', 44)
-        .replaceAll('COIN_TYPE', 501)
-    let secp256k1Code = (await fetch('wgsl/secp256k1.wgsl').then(r => r.text()))
-        .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
-    const passwordsInput = preparePasswordsInput(passwords)
-    const secp256input = prepareSecp256input(passwords)
-    const ed25519input = prepareEd25519input(passwords / 2)
-    const deriveSolanaInput = prepareDeriveSolanaInput(passwords)
-    
-    log(`[${((performance.now() - start) / 1000).toFixed(1)}s]\n`)
-    let shaders = []
-    let failed = false
-    let inp = null
-    function fail(text) {
-        log(text)
-        clean()
-        failed = true
-    }
-    for (let mode of ['ed25519', 'secp256k1', 'pbkdf2', 'solana', 'all']) {
-        if (mode === 'ed25519') {
-            log('\nEd25519:')
-            await setEccTable('ed25519')
-            shaders = [await buildShader(ed25519code, 'main', WORKGROUP_SIZE)]
-            inp = ed25519input
-        }
-        if (mode === 'solana') {
-            log('\nDerive Solana:')
-            shaders = [await buildShader(deriveCode, 'deriveSolana', WORKGROUP_SIZE)]
-            inp = deriveSolanaInput
-        }
-        if (mode === 'secp256k1') {
-            log('\nSecp256k1:')
-            await setEccTable('secp256k1')
-            shaders = [await buildShader(secp256k1Code, 'main', WORKGROUP_SIZE)]
-            inp = secp256input
-        }
-        if (mode === 'pbkdf2') {
-            log('\nPbkdf2-hmac-sha512:')
-            shaders = [await buildShader(pbkdf2Code, 'main', WORKGROUP_SIZE)]
-            inp = passwordsInput
-        }
-        if (mode === 'all') {
-            log('\nMnemonic to address:')
-            await setEccTable('secp256k1')
-            shaders = await buildEntirePipeline({
-                addrType: 'eth', MNEMONIC, buildShader, swapBuffers, WORKGROUP_SIZE,
-                hashList: [hexToUint8Array('9f592002A9216B5eB3B00040df6a9EaE4792A0De')],
-            })
-            inp = passwordsInput
-        }
+    const gpu = await webGPUinit({...options, BUF_SIZE: passwords*128 })
 
+    for (let mode of ['ed25519', 'secp256k1', 'pbkdf2', 'solana', 'mnemonic to address']) {
+        log(`\n${mode}:`);
+        const { inp, check, shaders } = await TESTS[mode]({ passwords, MNEMONIC, WORKGROUP_SIZE }, gpu);
         await new Promise(res => setTimeout(res, 100)) // flush text
         for (let i = 0; i < 12; i++) {
-            const batchSize = 64 * (2 ** i)
-            let time = Infinity
-            let out
+            let batchSize = 64 * (2 ** i), time = Infinity, out;
             for (let x = 0; x < 3; x++) {
                 const start = performance.now()
-                out = await inference({ shaders, inp, count: batchSize })
+                out = await gpu.inference({ shaders, inp, count: batchSize })
                 time = Math.min(time, (performance.now() - start) / 1000)
             }
-            if (mode === 'pbkdf2' && (u32arrToHex(out.slice(0, 16)) !== MNEMONIC_SEED_0 || u32arrToHex(out.slice(80, 96)) !== MNEMONIC_SEED_5)) {
-                fail('❌ pbkdf2 FAILED')
-            }
-            if (mode === 'secp256k1' && (u32arrToHex(out.slice(16, 32)) !== SECP_PUBKEY)) {
-                fail('❌ secp256k1 FAILED')
-            }
-            if (mode === 'ed25519' && out[0] !== 35) {
-                fail('❌ ed25519 FAILED')
-            }
-            if (mode === 'solana' && u32arrToHex(out.slice(0, 8)) !== ED25519_PRIVKEY) {
-                fail('❌ solana FAILED')
-            }
-            if (mode === 'all' && out[0] !== 35) {
-                fail('❌ wgsl pipeline FAILED')
-            }
-
-            log(`Batch: ${batchSize}, Speed: ${(batchSize / time) | 0} ops/s`);
-            if (failed) {
-                clean()
+            if (TESTS[mode] && !check(out)) {
+                log(`❌ ${mode} FAILED`)
+                gpu.clean()
                 return
             }
 
-            if (time > 1) {
-                break
-            }
+            log(`Batch: ${batchSize}, Speed: ${(batchSize / time) | 0} ops/s`);
+            if (time > 1) { break }
         }
     }
-    clean()
+    gpu.clean()
 }
 
 function base58Decode(str) {
