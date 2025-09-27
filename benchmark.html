@@ -115,11 +115,10 @@ async function runBenchmark(options) {
     const { clean, setEccTable, inference, buildShader, swapBuffers } =
         await webGPUinit({...options, BUF_SIZE: passwords*128 })
     const WORKGROUP_SIZE = 64
-    // const pipeline = await buildEntirePipeline({
-    //     addrType: 'solana', MNEMONIC, buildShader, swapBuffers, WORKGROUP_SIZE,
-    //     hashList: [hexToUint8Array('9f592002A9216B5eB3B00040df6a9EaE4792A0De')],
-    // })
     var pkList = [base58Decode('HDxSyFTFenjCwLRg3VVdm3jD4zyTf1ZStcG1TmiQC6u9')]
+    let pbkdf2Code = (await fetch('wgsl/pbkdf2_template.wgsl').then(r => r.text()))
+    pbkdf2Code = (await unrolledSha512_wgpu(pbkdf2Code, MNEMONIC))
+        .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
     let ed25519code = (await fetch('wgsl/ed25519.wgsl').then(r => r.text()))
         .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
         .replaceAll('CHECK_COUNT', pkList.length.toString(10))
@@ -144,7 +143,7 @@ async function runBenchmark(options) {
         clean()
         failed = true
     }
-    for (let mode of ['ed25519', 'secp256k1', 'solana']) {
+    for (let mode of ['ed25519', 'secp256k1', 'pbkdf2', 'solana', 'all']) {
         if (mode === 'ed25519') {
             log('\nEd25519:')
             await setEccTable('ed25519')
@@ -164,12 +163,16 @@ async function runBenchmark(options) {
         }
         if (mode === 'pbkdf2') {
             log('\nPbkdf2-hmac-sha512:')
-            shaders = [pipeline[0]]
+            shaders = [await buildShader(pbkdf2Code, 'main', WORKGROUP_SIZE)]
             inp = passwordsInput
         }
         if (mode === 'all') {
             log('\nMnemonic to address:')
-            shaders = pipeline
+            await setEccTable('secp256k1')
+            shaders = await buildEntirePipeline({
+                addrType: 'eth', MNEMONIC, buildShader, swapBuffers, WORKGROUP_SIZE,
+                hashList: [hexToUint8Array('9f592002A9216B5eB3B00040df6a9EaE4792A0De')],
+            })
             inp = passwordsInput
         }
 
@@ -194,8 +197,6 @@ async function runBenchmark(options) {
             }
             if (mode === 'solana' && u32arrToHex(out.slice(0, 8)) !== ED25519_PRIVKEY) {
                 fail('❌ solana FAILED')
-                console.log('Expected:', ED25519_PRIVKEY)
-                console.log('Priv key:', u32arrToHex(out.slice(0, 8)))
             }
             if (mode === 'all' && out[0] !== 35) {
                 fail('❌ wgsl pipeline FAILED')
