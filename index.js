@@ -9,11 +9,12 @@ document.addEventListener('DOMContentLoaded', () => {
     window['brute-pane'].style.display = 'block'
     window['settings-pane'].style.display = 'none'
   }
-  window.derive.onchange = () => {
-    DERIVE_ADDRESSES = Number(window.derive.value)
+  window.derive.oninput = () => {
+    DERIVE_ADDRESSES = 2 ** Number(window.derive.value)
     window.deriveView.innerText = Math.max(DERIVE_ADDRESSES, 1)
+    console.log('RAM:', 1024 * 32 * 128 * DERIVE_ADDRESSES / 1024 / 1024 | 0, 'Mb')
   }
-  window.derive.value = DERIVE_ADDRESSES
+  window.derive.value = Math.log2(DERIVE_ADDRESSES)
   window.deriveView.innerText = DERIVE_ADDRESSES
 
   async function checkInput() {
@@ -34,7 +35,7 @@ async function brutePasswordGPU() {
     window.brute.innerText = '🛑 STOP'
     
     const batchSize = 1024 * 32
-    const ADDR_COUNT = 2
+    const ADDR_COUNT = DERIVE_ADDRESSES
     const WORKGROUP_SIZE = 64
     const { name, setEccTable, clean, inference, buildShader, swapBuffers } = await webGPUinit({ BUF_SIZE: batchSize*128*ADDR_COUNT })
     await setEccTable(addrType === 'solana' ? 'ed25519' : 'secp256k1')
