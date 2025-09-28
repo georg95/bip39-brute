@@ -211,7 +211,7 @@ fn deriveChild2(keys: ptr<function, array<u32, 16>>, keysPub: ptr<function, arra
   // >= 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141
   let moreOrEqThanN = keys[0] >= 0xffffffff && keys[1] >= 0xffffffff && keys[2] >= 0xffffffff &&
     keys[3] >= 0xfffffffe && keys[4] >= 0xbaaedce6 && keys[5] >= 0xaf48a03b && keys[6] >= 0xbfd25e8c && keys[7] >= 0xd0364141;
-  if (carry == 1 || moreOrEqThanN) {
+  if (carry == 1) {
     for (var i = 7; i >= 0; i--) {
       var a = NInv[i];
       var b = keys[i];
@@ -285,33 +285,6 @@ fn deriveSeed(keys: ptr<function, array<u32, 16>>, password: array<u32, 3>, offs
   hmacSha512(&key, &data, 64, keys);
 }
 
-@group(0) @binding(0) var<storage, read> input: array<u32>;
-@group(0) @binding(1) var<storage, read_write> output: array<u32>;
-
-@compute @workgroup_size(WORKGROUP_SIZE)
-fn deriveCoin(@builtin(global_invocation_id) gid: vec3<u32>) {
-  var keys: array<u32, 16>;
-  //                             "Bitcoin seed"
-  deriveSeed(&keys, array<u32, 3>(0x42697463, 0x6f696e20, 0x73656564), gid.x * 16u);
-  deriveChild(&keys, 128, NETWORK);
-  deriveChild(&keys, 128, COIN_TYPE);
-  deriveChild(&keys, 128, 0);
-
-  for (var i: u32 = 0; i < 16; i++) { output[gid.x * 16u + i] = keys[i]; }
-}
-
-@compute @workgroup_size(WORKGROUP_SIZE)
-fn deriveAddr(@builtin(global_invocation_id) gid: vec3<u32>) {
-  var keys: array<u32, 16>;
-  var keysPub: array<u32, 16>;
-  for (var i: u32 = 0; i < 16; i++) { keys[i]    = input[gid.x * 32u + i]; }
-  for (var i: u32 = 0; i < 16; i++) { keysPub[i] = input[gid.x * 32u + 16 + i]; }
-  let prefix = (keysPub[15] & 1u) + 2u;
-  deriveChild2(&keys, &keysPub, 0, 0, prefix);
-
-  for (var i: u32 = 0; i < 16; i++) { output[gid.x * 16u + i] = keys[i]; }
-}
-
 fn deriveChildSolana(keys: ptr<function, array<u32, 16>>, coin: u32) {
   var key: array<u32, 16>;
   var data: array<u32, 32>;
@@ -371,6 +344,49 @@ fn swap_bytes_u32(value: u32) -> u32 {
            ((value & 0xFF000000u) >> 24u);
 }
 
+@group(0) @binding(0) var<storage, read> input: array<u32>;
+@group(0) @binding(1) var<storage, read_write> output: array<u32>;
+
+@compute @workgroup_size(WORKGROUP_SIZE)
+fn deriveCoin(@builtin(global_invocation_id) gid: vec3<u32>) {
+  var keys: array<u32, 16>;
+  //                             "Bitcoin seed"
+  deriveSeed(&keys, array<u32, 3>(0x42697463, 0x6f696e20, 0x73656564), gid.x * 16u);
+  deriveChild(&keys, 128, NETWORK);
+  deriveChild(&keys, 128, COIN_TYPE);
+  deriveChild(&keys, 128, 0);
+
+  for (var i: u32 = 0; i < 16; i++) { output[gid.x * 16u + i] = keys[i]; }
+}
+
+@compute @workgroup_size(WORKGROUP_SIZE)
+fn deriveChange(@builtin(global_invocation_id) gid: vec3<u32>) {
+  var keys: array<u32, 16>;
+  var keysPub: array<u32, 16>;
+  for (var i: u32 = 0; i < 16; i++) { keys[i]    = input[gid.x * 32u + i]; }
+  for (var i: u32 = 0; i < 16; i++) { keysPub[i] = input[gid.x * 32u + 16 + i]; }
+  let prefix = (keysPub[15] & 1u) + 2u;
+  
+  deriveChild2(&keys, &keysPub, 0, 0, prefix);
+  for (var i: u32 = 0; i < 16; i++) { output[gid.x * 16u + i] = keys[i]; }
+}
+
+@compute @workgroup_size(WORKGROUP_SIZE)
+fn deriveAddr(@builtin(global_invocation_id) gid: vec3<u32>) {
+  var keys: array<u32, 16>;
+  var keysPub: array<u32, 16>;
+  for (var i: u32 = 0; i < 16; i++) { keys[i]    = input[gid.x * 32u + i]; }
+  for (var i: u32 = 0; i < 16; i++) { keysPub[i] = input[gid.x * 32u + 16 + i]; }
+  let prefix = (keysPub[15] & 1u) + 2u;
+
+  for (var addr = 0u; addr < ADDR_COUNT; addr++) {
+    var keysOut: array<u32, 16>;
+    for (var i: u32 = 0; i < 16; i++) { keysOut[i] = keys[i]; }
+    deriveChild2(&keysOut, &keysPub, 0, addr, prefix);
+    for (var i: u32 = 0; i < 16; i++) { output[(gid.x * ADDR_COUNT + addr) * 16u + i] = keysOut[i]; }
+  }
+}
+
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn deriveSolana(@builtin(global_invocation_id) gid: vec3<u32>) {
   var IV = array<u32,16>(
@@ -385,20 +401,24 @@ fn deriveSolana(@builtin(global_invocation_id) gid: vec3<u32>) {
   deriveChildSolana(&keys, 44);
   deriveChildSolana(&keys, 501);
   deriveChildSolana(&keys, 0);
-  deriveChildSolana(&keys, 0);
-  var data: array<u32, 32>;
-  for (var i = 0; i < 32; i++) { data[i] = 0; }
-  for (var i = 0; i < 8; i++) { data[i] = keys[i]; }
-  setByteArr(&data, 32, 0x80);
-  setByteArr(&data, 127, (32 & 0x1f) << 3);
-  setByteArr(&data, 126, (32 >> 5) & 0xff);
-  sha512(&data, &keys, &IV);
-  clampEd25519Scalar(&keys);
-  for (var i: u32 = 0; i < 4; i++) {
-    var tmp = keys[7u - i];
-    keys[7u - i] = swap_bytes_u32(keys[i]);
-    keys[i] = swap_bytes_u32(tmp);
+  for (var addr = 0u; addr < ADDR_COUNT; addr++) {
+    var keysOut: array<u32, 16>;
+    for (var i: u32 = 0; i < 16; i++) { keysOut[i] = keys[i]; }
+    deriveChildSolana(&keysOut, addr);
+    var data: array<u32, 32>;
+    for (var i = 0; i < 32; i++) { data[i] = 0; }
+    for (var i = 0; i < 8; i++) { data[i] = keysOut[i]; }
+    setByteArr(&data, 32, 0x80);
+    setByteArr(&data, 127, (32 & 0x1f) << 3);
+    setByteArr(&data, 126, (32 >> 5) & 0xff);
+    sha512(&data, &keysOut, &IV);
+    clampEd25519Scalar(&keysOut);
+    for (var i: u32 = 0; i < 4; i++) {
+      var tmp = keysOut[7u - i];
+      keysOut[7u - i] = swap_bytes_u32(keysOut[i]);
+      keysOut[i] = swap_bytes_u32(tmp);
+    }
+    reduceByEdwardsModule(&keysOut);
+    for (var i: u32 = 0; i < 8; i++) { output[(gid.x * ADDR_COUNT + addr) * 8u + i] = keysOut[i]; }
   }
-  reduceByEdwardsModule(&keys);
-  for (var i: u32 = 0; i < 8; i++) { output[gid.x * 8u + i] = keys[i]; }
 }

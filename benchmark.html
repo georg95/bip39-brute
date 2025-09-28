@@ -95,6 +95,7 @@ const TESTS = {
                 .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
                 .replaceAll('NETWORK', 44)
                 .replaceAll('COIN_TYPE', 501)
+                .replaceAll('ADDR_COUNT', `${1}u`)
         const shaders = [await gpu.buildShader(deriveCode, 'deriveSolana', WORKGROUP_SIZE)]
         const inp = new Uint32Array(16 * passwords)
         const seed = hexToUint32Array('2177a1d6e983977c6b8e1b2214da6e61651d878d2c002024d086ee0e50626f0cf3890c740d8c425380397c61395ff2147d49d068be6a68d3e8b775e7a20c20ed')
@@ -133,7 +134,7 @@ const TESTS = {
     'mnemonic to address': async function ({ passwords, MNEMONIC, WORKGROUP_SIZE }, gpu) {
         await gpu.setEccTable('secp256k1')
         const shaders = await buildEntirePipeline({
-            addrType: 'eth', MNEMONIC, WORKGROUP_SIZE, ...gpu,
+            addrType: 'eth', addrCount: 1, MNEMONIC, WORKGROUP_SIZE, ...gpu,
             hashList: [hexToUint8Array('9f592002A9216B5eB3B00040df6a9EaE4792A0De')],
         })
         const PASSWORD = 'gauffers'

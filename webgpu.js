@@ -6,7 +6,7 @@ const ADDRTYPEMAP = {
   'tron': [44, 195],
   'solana': [44, 501],
 }
-async function buildEntirePipeline({ addrType, MNEMONIC, WORKGROUP_SIZE, buildShader, swapBuffers, hashList }) {
+async function buildEntirePipeline({ addrType, addrCount, MNEMONIC, WORKGROUP_SIZE, buildShader, swapBuffers, hashList }) {
     assert(addrType && ADDRTYPEMAP[addrType] && MNEMONIC && WORKGROUP_SIZE && buildShader && swapBuffers && hashList)
     const [NETWORK, COIN_TYPE] = ADDRTYPEMAP[addrType]
     let shaders = []
@@ -19,6 +19,7 @@ async function buildEntirePipeline({ addrType, MNEMONIC, WORKGROUP_SIZE, buildSh
         .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
         .replaceAll('NETWORK', NETWORK)
         .replaceAll('COIN_TYPE', COIN_TYPE)
+        .replaceAll('ADDR_COUNT', `${addrCount}u`)
 
     console.time('[COMPILE] pbkdf2');
     shaders.push(await buildShader(pbkdf2Code, 'main', WORKGROUP_SIZE))
@@ -35,7 +36,7 @@ async function buildEntirePipeline({ addrType, MNEMONIC, WORKGROUP_SIZE, buildSh
           .replaceAll('CHECK_COUNT', hashList.length.toString(10))
           .replaceAll('CHECK_KEYS', solanaPkListToWGSLArray(hashList))
         console.time('[COMPILE] ed25519');
-        shaders.push(await buildShader(ed25519Code, 'main', WORKGROUP_SIZE))
+        shaders.push(await buildShader(ed25519Code, 'main', WORKGROUP_SIZE / addrCount))
         console.timeEnd('[COMPILE] ed25519');
         swapBuffers()
         return shaders
@@ -47,16 +48,17 @@ async function buildEntirePipeline({ addrType, MNEMONIC, WORKGROUP_SIZE, buildSh
     console.timeEnd('[COMPILE] secp256k1');
     shaders.push(secp256k1Shader)
     swapBuffers()
-    console.time('[COMPILE] deriveAddr');
-    const derive2Shader = await buildShader(deriveCode, 'deriveAddr', WORKGROUP_SIZE)
-    console.timeEnd('[COMPILE] deriveAddr');
-    shaders.push(derive2Shader)
+    console.time('[COMPILE] deriveChange/deriveAddr');
+    const deriveChangeShader = await buildShader(deriveCode, 'deriveChange', WORKGROUP_SIZE)
+    const deriveAddrShader = await buildShader(deriveCode, 'deriveAddr', WORKGROUP_SIZE)
+    console.timeEnd('[COMPILE] deriveChange/deriveAddr');
+    shaders.push(deriveChangeShader)
     swapBuffers()
     shaders.push(secp256k1Shader)
     swapBuffers()
-    shaders.push(derive2Shader)
+    shaders.push(deriveAddrShader)
     swapBuffers()
-    shaders.push(secp256k1Shader)
+    shaders.push({ ...secp256k1Shader, workPerWarp: WORKGROUP_SIZE / addrCount })
     swapBuffers()
 
 
@@ -66,19 +68,19 @@ async function buildEntirePipeline({ addrType, MNEMONIC, WORKGROUP_SIZE, buildSh
         .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
         .replaceAll('CHECK_COUNT', hashList.length.toString(10))
         .replaceAll('CHECK_HASHES', hash160ToWGSLArray(hashList))
-      shaders.push(await buildShader(keccakCode, 'main', WORKGROUP_SIZE))
+      shaders.push(await buildShader(keccakCode, 'main', WORKGROUP_SIZE / addrCount))
     } else if (addrType === 'p2sh') {
       let hash160Code = (await fetch('wgsl/hash160.wgsl').then(r => r.text()))
         .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
         .replaceAll('CHECK_COUNT', hashList.length.toString(10))
         .replaceAll('CHECK_HASHES', hash160ToWGSLArray(hashList))
-      shaders.push(await buildShader(hash160Code, 'p2sh', WORKGROUP_SIZE))
+      shaders.push(await buildShader(hash160Code, 'p2sh', WORKGROUP_SIZE / addrCount))
     } else {
       let hash160Code = (await fetch('wgsl/hash160.wgsl').then(r => r.text()))
         .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
         .replaceAll('CHECK_COUNT', hashList.length.toString(10))
         .replaceAll('CHECK_HASHES', hash160ToWGSLArray(hashList))
-      shaders.push(await buildShader(hash160Code, 'main', WORKGROUP_SIZE))
+      shaders.push(await buildShader(hash160Code, 'main', WORKGROUP_SIZE / addrCount))
     }
 
     console.timeEnd('[COMPILE] keccak/hash160');

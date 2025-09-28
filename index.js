@@ -34,8 +34,9 @@ async function brutePasswordGPU() {
     window.brute.innerText = '🛑 STOP'
     
     const batchSize = 1024 * 32
+    const ADDR_COUNT = 2
     const WORKGROUP_SIZE = 64
-    const { name, setEccTable, clean, inference, buildShader, swapBuffers } = await webGPUinit({ BUF_SIZE: batchSize*128 })
+    const { name, setEccTable, clean, inference, buildShader, swapBuffers } = await webGPUinit({ BUF_SIZE: batchSize*128*ADDR_COUNT })
     await setEccTable(addrType === 'solana' ? 'ed25519' : 'secp256k1')
     const PASSWORD_LISTS = [
       { url: 'forced-browsing/all.txt', filePasswords: 43135 },
@@ -53,7 +54,7 @@ async function brutePasswordGPU() {
     ]
     // PASSWORD_LISTS.sort((a, b) => a.filePasswords - b.filePasswords)
     const pipeline = await buildEntirePipeline({
-        addrType, MNEMONIC: bip39mask, WORKGROUP_SIZE, buildShader, swapBuffers, hashList: addrHash160list
+        addrType, addrCount: ADDR_COUNT, MNEMONIC: bip39mask, WORKGROUP_SIZE, buildShader, swapBuffers, hashList: addrHash160list
     })
     log(`[${name}]\nBruteforce init...`, true)
     let curList = 0
@@ -83,10 +84,11 @@ async function brutePasswordGPU() {
         const progress = (processedPasswords / filePasswords * 100).toFixed(1).padStart(4, '')
         log(`[${name}]\n${listName} (${curList}/${PASSWORD_LISTS.length}) ${progress}% ${speed} passwords/s`, true)
         if (out[0] !== 0xffffffff) {
+            const mnemoIndex = out[0] / ADDR_COUNT | 0
             const passBuf = new Uint8Array(inp.passwords)
             const passBufIndex = new Uint32Array(inp.passwords, 128)
-            const index = passBufIndex[out[0]]
-            const index2 = passBufIndex[out[0] + 1]
+            const index = passBufIndex[mnemoIndex]
+            const index2 = passBufIndex[mnemoIndex + 1]
             log(`FOUND :)\nPassword: ${new TextDecoder().decode(passBuf.slice(index, index2 - 1))}`, true)
             break
         }
