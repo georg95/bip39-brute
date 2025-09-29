@@ -65,6 +65,7 @@ const TESTS = {
         return { shaders, inp, check(out) {
             console.log('hash:', u32arrToHex(out.slice(0, 8)))
             console.log('hash:', '1402a3971f424aeccd307c7585cbda8779491e41877182ea49003a868fd5846c')
+            console.log('out[0]:', out[0].toString(16))
             return u32arrToHex(out.slice(0, 8)) === '1402a3971f424aeccd307c7585cbda8779491e41877182ea49003a868fd5846c'
         } }
     },

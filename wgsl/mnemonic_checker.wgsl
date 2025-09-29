@@ -62,24 +62,62 @@ fn swap_bytes_u32(value: u32) -> u32 {
 @group(0) @binding(0) var<storage, read> input: array<u32>;
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;
 
+
+const masks = array<u32, 4>(0x00ffffff, 0xff00ffff, 0xffff00ff, 0xffffff00);
+fn setByteArr(arr: ptr<function, array<u32, 64>>, idx: u32, byte: u32) {
+  let i = idx/4;
+  let sh = idx%4;
+  arr[i] = (arr[i] & masks[sh]) + (byte << (24 - sh * 8));
+}
+
+fn setMnemoIndexes(w: ptr<function, array<u32, 64>>, indexes: array<u32, 12>) {
+    for (var i = 0; i < 16; i++) {
+        w[i] = 0;
+    }
+    var acc = 0u;
+    var accBits = 0u;
+    var j = 0u;
+    for (var i = 0; i < 12; i++) {
+        acc = (acc << 11u) | indexes[i];
+        accBits += 3; setByteArr(w, j, (acc >> accBits) & 0xff); j++;
+        if (accBits >= 8) {
+            accBits -= 8; setByteArr(w, j, (acc >> accBits) & 0xff); j++;
+        }
+    }
+    w[4] = 0x80000000;
+    w[15] = 16 * 8; // 16 bytes = 16 * 8 bits;
+}
+
+const MASK = array<u32, 13>(0, 2047, 0, 2047, 2047, 2047, 2047, 2047, 2047, 2047, 2047, 2047, 2047);
+const MASKLEN = array<u32, 12>(2048, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1);
+
+fn permutation(N: u32) -> array<u32, 12> {
+    var perm: array<u32, 12>;
+    var curOff = 0u;
+    var n = N;
+    for (var i = 0; i < 12; i++) {
+        if (MASKLEN[i] == 2048) {
+            perm[11 - i] = n % 2048;
+        } else {
+            perm[11 - i] = MASK[curOff + n % MASKLEN[i]];
+            curOff += MASKLEN[i];
+        }
+        n = n / MASKLEN[i];
+    }
+    return perm;
+}
+
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (gid.x == 0) { output[0] = 0xffffffffu; }
     var out: array<u32, 8>;
     var w: array<u32, 64>;
-    for (var i = 0; i < 16; i++) {
-        w[i] = 0;
-    }
-    w[0] = 0xffffffff;
-    w[1] = 0xffffffff;
-    w[2] = 0xffffffff;
-    w[3] = 224 << 24;
-    w[4] = 0x80000000;
-    w[15] = 16 * 8; // 16 bytes = 16 * 8 bits;
-    // w[3] = 224;
+    setMnemoIndexes(&w, permutation(1));
     sha256(&w, &out);
-    for (var i = 0; i < 8; i++) {
-        output[i] = out[i];
+    if (out[0] >> 28 == 1) {
+        for (var i = 0; i < 8; i++) {
+            output[i] = out[i];
+        }
     }
 }
 
