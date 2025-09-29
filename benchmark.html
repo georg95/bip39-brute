@@ -57,6 +57,17 @@ window.benchmark.onclick = async () => {
 }
 
 const TESTS = {
+    'mnemonic checker': async function ({ passwords, WORKGROUP_SIZE }, gpu) {
+        let mnemonicFilterCode = (await fetch('wgsl/mnemonic_checker.wgsl').then(r => r.text()))
+            .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
+        const shaders = [await gpu.buildShader(mnemonicFilterCode, 'main', WORKGROUP_SIZE)]
+        const inp = new Uint32Array(8 * passwords)
+        return { shaders, inp, check(out) {
+            console.log('hash:', u32arrToHex(out.slice(0, 8)))
+            console.log('hash:', '1402a3971f424aeccd307c7585cbda8779491e41877182ea49003a868fd5846c')
+            return u32arrToHex(out.slice(0, 8)) === '1402a3971f424aeccd307c7585cbda8779491e41877182ea49003a868fd5846c'
+        } }
+    },
     'ed25519': async function ({ passwords, WORKGROUP_SIZE }, gpu) {
         await gpu.setEccTable('ed25519')
         var pkList = [base58Decode('HDxSyFTFenjCwLRg3VVdm3jD4zyTf1ZStcG1TmiQC6u9')]
@@ -162,11 +173,11 @@ async function runBenchmark(options) {
     const WORKGROUP_SIZE = 64
     const gpu = await webGPUinit({...options, BUF_SIZE: passwords*128 })
 
-    for (let mode of ['ed25519', 'secp256k1', 'pbkdf2', 'solana', 'mnemonic to address']) {
+    for (let mode of ['mnemonic checker']) {
         log(`\n${mode}:`);
         const { inp, check, shaders } = await TESTS[mode]({ passwords, MNEMONIC, WORKGROUP_SIZE }, gpu);
         await new Promise(res => setTimeout(res, 100)) // flush text
-        for (let i = 0; i < 12; i++) {
+        for (let i = 0; i < 1; i++) {
             let batchSize = 64 * (2 ** i), time = Infinity, out;
             for (let x = 0; x < 3; x++) {
                 const start = performance.now()
