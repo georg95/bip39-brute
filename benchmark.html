@@ -122,6 +122,18 @@ const TESTS = {
             return u32arrToHex(out.slice(0, 8)) === '09ffcb448f752fd52d656882451e24a80e4dbbbc0a71ec83b8d3d720503c3484'
         } }
     },
+    'pbkdf2-mask': async function ({ passwords, WORKGROUP_SIZE }, gpu) {
+        let pbkdf2Code = setPermutationsMask('chimney embody pulp lawsuit doctor diary hope gun motion coyote flip desert', (await fetch('wgsl/pbkdf2_mask.wgsl').then(r => r.text())))
+            .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))            
+        const shaders = [await gpu.buildShader(pbkdf2Code, 'main', WORKGROUP_SIZE)]
+        const inp = new Uint32Array(32).fill(0)
+        const MNEMONIC_SEED = '6e7f9c85c909c1f37e553ada9039cc705b73a441685db2468c8d2b8409fa9c14e27ad6c464b34485a820d18c3bc2cb78e31a9423af437d41ae4b0a26e94c695e'
+
+        return { shaders, inp, check(out) {
+            console.log('seed:', u32arrToHex(out.slice(0, 16)))
+            return (u32arrToHex(out.slice(0, 16)) === MNEMONIC_SEED)
+        } }
+    },
     'pbkdf2': async function ({ passwords, MNEMONIC, WORKGROUP_SIZE }, gpu) {
         let pbkdf2Code = (await fetch('wgsl/pbkdf2_template.wgsl').then(r => r.text()))
         pbkdf2Code = (await unrolledSha512_wgpu(pbkdf2Code, MNEMONIC))
@@ -178,11 +190,11 @@ async function runBenchmark(options) {
     const WORKGROUP_SIZE = 64
     const gpu = await webGPUinit({...options, BUF_SIZE: passwords*128 })
 
-    for (let mode of ['mnemonic checker']) {
+    for (let mode of ['pbkdf2-mask']) {
         log(`\n${mode}:`);
         const { inp, check, shaders } = await TESTS[mode]({ passwords, MNEMONIC, WORKGROUP_SIZE }, gpu);
         await new Promise(res => setTimeout(res, 100)) // flush text
-        for (let i = 0; i < 14; i++) {
+        for (let i = 0; i < 1; i++) {
             let batchSize = 64 * (2 ** i), time = Infinity, out;
             for (let x = 0; x < 3; x++) {
                 const start = performance.now()
