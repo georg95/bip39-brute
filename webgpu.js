@@ -159,6 +159,8 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
     async function inference({ shaders, inp, count }) {
         assert(inp?.length <= BUF_SIZE / 4, `expected input size to be <= ${BUF_SIZE / 4}, got ${inp?.length}`)
         device.queue.writeBuffer(shaders[0].bufferIn, 0, inp)
+        // reset bip39 valid mnemonic counter
+        device.queue.writeBuffer(shaders[0].bufferOut, 0, new Uint32Array(1)) 
         const commandEncoder = device.createCommandEncoder()
         const passEncoder = commandEncoder.beginComputePass()
         for(let { binding, pipeline, workPerWarp } of shaders) {

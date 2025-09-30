@@ -59,10 +59,6 @@ fn swap_bytes_u32(value: u32) -> u32 {
            ((value & 0xFF000000u) >> 24u);
 }
 
-@group(0) @binding(0) var<storage, read> input: array<u32>;
-@group(0) @binding(1) var<storage, read_write> output: array<u32>;
-
-
 const masks = array<u32, 4>(0x00ffffff, 0xff00ffff, 0xffff00ff, 0xffffff00);
 fn setByteArr(arr: ptr<function, array<u32, 64>>, idx: u32, byte: u32) {
   let i = idx/4;
@@ -107,17 +103,43 @@ fn permutation(N: u32) -> array<u32, 12> {
     return perm;
 }
 
+
+struct Output {
+    counter: atomic<u32>,
+    indices: array<u32>,
+};
+
+@group(0) @binding(0) var<storage, read> input: array<u32>;
+@group(0) @binding(1) var<storage, read_write> output: Output;
+
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    if (gid.x == 0) { output[0] = 0xffffffffu; }
     var out: array<u32, 8>;
     var w: array<u32, 64>;
-    setMnemoIndexes(&w, permutation(1));
-    sha256(&w, &out);
-    if (out[0] >> 28 == 1) {
-        for (var i = 0; i < 8; i++) {
-            output[i] = out[i];
+    var buf: array<u32, BUF_SIZE>;
+    var curItem = 0u;
+    for (var i = 0u; i < MNEMONICS_PER_THREAD; i++) {
+        let index = gid.x*MNEMONICS_PER_THREAD + i;
+        let perm = permutation(index);
+        setMnemoIndexes(&w, perm);
+        sha256(&w, &out);
+        let isMnemonicValid = (out[0] >> 28) == (perm[11] & 0x0f);
+        if (isMnemonicValid) {
+            buf[curItem] = index;
+            curItem++;
+        }
+        if (curItem >= BUF_SIZE) {
+            let pos = atomicAdd(&output.counter, BUF_SIZE);
+            for (var j = 0u; j < BUF_SIZE; j++) {
+                output.indices[pos + j] = buf[j];
+            }
+            curItem = 0u;
         }
     }
+    let pos = atomicAdd(&output.counter, curItem);
+    for (var j = 0u; j < curItem; j++) {
+        output.indices[pos + j] = buf[j];
+    }
+
 }
 
