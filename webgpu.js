@@ -45,70 +45,63 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
         console.log('Cleaned WebGPU device resources')
     })
 
-    async function inference({ inp, shaders, count }) {
-        if (!shaders) {
-          shaders = shaders.pipeline
-        } else {
-          device.queue.writeBuffer(shaders[0].bufferOut, 0, new Uint32Array(1))
-        }
-        assert(shaders, 'call prepareShaderPipeline first')
+    async function inferenceTest({ inp, shaders, count }) {
         assert(inp?.length <= BUF_SIZE / 4, `expected input size to be <= ${BUF_SIZE / 4}, got ${inp?.length}`)
         device.queue.writeBuffer(shaders[0].bufferIn, 0, inp)
+        // reset counter for mnemonic checker test
+        device.queue.writeBuffer(shaders[0].bufferOut, 0, new Uint32Array(1))
         const commandEncoder = device.createCommandEncoder()
         const passEncoder = commandEncoder.beginComputePass()
-        for(let { binding, pipeline, workPerWarp } of shaders) {
+        for (let { name, binding, pipeline, workPerWarp } of shaders) {
+            assert(!name || name === tableType, `initialze ecc table ${name} before inference`)
             passEncoder.setBindGroup(0, binding)
             passEncoder.setPipeline(pipeline)
             passEncoder.dispatchWorkgroups(Math.ceil(count / workPerWarp))
         }
         passEncoder.end()
-        commandEncoder.copyBufferToBuffer(shaders[shaders.length - 1].bufferOut, 0, stagingBuffer, 0, 4096)
-        device.queue.submit([commandEncoder.finish()])
-        await stagingBuffer.mapAsync(GPUMapMode.READ, 0, 4096)
-        const copyArrayBuffer = stagingBuffer.getMappedRange(0, 4096)
-        const result = new Uint32Array(copyArrayBuffer.slice(), 0, 1024)
-        stagingBuffer.unmap()
-        return result
+        return await readGpuBuffer(shaders[shaders.length - 1].bufferOut, 0, 4096, commandEncoder)
+    }
+
+    async function inference({ inp, count }) {
+        assert(shaders.pipeline, 'call prepareShaderPipeline first')
+        assert(inp?.length <= BUF_SIZE / 4, `expected input size to be <= ${BUF_SIZE / 4}, got ${inp?.length}`)
+        device.queue.writeBuffer(shaders.pipeline[0].bufferIn, 0, inp)
+        const commandEncoder = device.createCommandEncoder()
+        const passEncoder = commandEncoder.beginComputePass()
+        for (let { name, binding, pipeline, workPerWarp } of shaders.pipeline) {
+            assert(!name || name === tableType, `initialze ecc table ${name} before inference`)
+            passEncoder.setBindGroup(0, binding)
+            passEncoder.setPipeline(pipeline)
+            passEncoder.dispatchWorkgroups(Math.ceil(count / workPerWarp))
+        }
+        passEncoder.end()
+        return await readGpuBuffer(shaders.pipeline[shaders.pipeline.length - 1].bufferOut, 0, 1024, commandEncoder)
+    }
+
+    async function readGpuBuffer(sourceBuffer, offset, values, commandEncoder) {
+        if (!commandEncoder) {
+            commandEncoder = device.createCommandEncoder();
+        }  
+        commandEncoder.copyBufferToBuffer(
+            sourceBuffer,
+            offset * 4,
+            stagingBuffer,
+            0,
+            values * 4
+        );
+        device.queue.submit([commandEncoder.finish()]);
+        await stagingBuffer.mapAsync(GPUMapMode.READ);
+        const arrayBuffer = stagingBuffer.getMappedRange(0, values * 4);
+        const result = new Uint32Array(arrayBuffer.slice(), 0, values)
+        stagingBuffer.unmap();
+        return result;
     }
 
     let lastCounter = 0
     let seedsAmount = 0
-
-    function permutations(input) {
-      const tokens = input.split(" ");
-      var MASK = []
-      var MASKLEN = []
-      tokens.map(token => {
-        if (token === "*") { MASKLEN = [2048].concat(MASKLEN); return }
-        const indexes = token.split(",").map(token => biplist.indexOf(token))
-        MASKLEN.unshift(indexes.length)
-        MASK = indexes.concat(MASK)
-      })
-      console.log(`const MASK = array<u32, ${MASK.length}>(${MASK.join(', ')});`)
-      console.log(`const MASKLEN = array<u32, ${MASKLEN.length}>(${MASKLEN.join(', ')});`)
-      return {
-        permCount: MASKLEN.reduce((acc, cur) => acc * cur, 1),
-        perm(N) {
-          const selected = new Array(MASKLEN.length);
-          var curOff = 0
-          for (let i = 0; i < MASKLEN.length; i++) {
-            if (MASKLEN[i] === 2048) {
-              selected[MASKLEN.length - 1 - i] = N % 2048;
-            } else {
-              selected[MASKLEN.length - 1 - i] = MASK[curOff + N % MASKLEN[i]];
-              curOff += MASKLEN[i]
-            }
-            N = (N / MASKLEN[i]) | 0;
-          }
-          // console.log('selected:', selected)
-          return selected;
-        }
-      }
-    }
     async function inferenceMask({ count }) {
         assert(validSeedShader, 'call initValidSeedsShader first')
         if (seedsAmount - lastCounter <= 0) {
-            console.log('Gen new seeds')
             const AVG_IVALID_SEEDS_PER_VALID = 1
             const SEED_GEN_MULTIPLIER = 1
             device.queue.writeBuffer(buffers.seeds, 0, new Uint32Array(1))
@@ -118,48 +111,28 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
             passEncoder.setPipeline(validSeedShader.pipeline)
             passEncoder.dispatchWorkgroups(Math.ceil(AVG_IVALID_SEEDS_PER_VALID * SEED_GEN_MULTIPLIER * count / validSeedShader.workPerWarp))
             passEncoder.end()
-            const OUT_NUM = 1024 * 128
-            commandEncoder.copyBufferToBuffer(buffers.seeds, 0, stagingBuffer, 0, OUT_NUM * 4)
-            device.queue.submit([commandEncoder.finish()])
-            await stagingBuffer.mapAsync(GPUMapMode.READ, 0, OUT_NUM * 4)
-            const copyArrayBuffer = stagingBuffer.getMappedRange(0, OUT_NUM * 4)
-            const result = new Uint32Array(copyArrayBuffer.slice(), 0, OUT_NUM)
-            stagingBuffer.unmap()
+            const result = await readGpuBuffer(buffers.seeds, 0, 1024, commandEncoder)
             lastCounter = 0
             seedsAmount = result[0]
-            console.log('seedsAmount:', seedsAmount)
-            const seedNums = Array.from(result.slice(1, seedsAmount+1))
-            // seedNums.sort((a, b) => a-b)
-            console.log('seeds:', seedNums)
-            const { perm } = permutations('zoo zoo zoo zoo zoo zoo zoo zoo zoo abandon,zoo abandon,zoo *')
-            console.log('seed:', seedNums[0])
-            console.log('perm:', perm(seedNums[0]).map(x => biplist[x]).join(' '))
         }
         device.queue.writeBuffer(buffers.seeds, 0, new Uint32Array([lastCounter]))
+        lastCounter += count
         const commandEncoder = device.createCommandEncoder()
         const passEncoder = commandEncoder.beginComputePass()
-        let shadersLine = shaders.pipeline.slice(0, 1)
-        for(let { binding, pipeline, workPerWarp } of shadersLine) {
+        let shadersLine = shaders.pipeline
+        for (let { name, binding, pipeline, workPerWarp } of shadersLine) {
+            assert(!name || name === tableType, `initialze ecc table ${name} before inference`)
             passEncoder.setBindGroup(0, binding)
             passEncoder.setPipeline(pipeline)
             passEncoder.dispatchWorkgroups(Math.ceil(count / workPerWarp))
         }
         passEncoder.end()
-        const OUT_NUM = 1024
-        commandEncoder.copyBufferToBuffer(shadersLine[shadersLine.length - 1].bufferOut, 0, stagingBuffer, 0, OUT_NUM * 4)
-        device.queue.submit([commandEncoder.finish()])
-        await stagingBuffer.mapAsync(GPUMapMode.READ, 0, OUT_NUM * 4)
-        const copyArrayBuffer = stagingBuffer.getMappedRange(0, OUT_NUM * 4)
-        const result = new Uint32Array(copyArrayBuffer.slice(), 0, OUT_NUM)
-        stagingBuffer.unmap()
-
-        // function u32arrToHex(u32arr) {
-        //     return Array.from(u32arr).map(x => x.toString(16).padStart(8,'0')).join('');
-        // }
-        // for (let x = 0; x < OUT_NUM - 16; x += 16) {
-        //   console.log('seed:', u32arrToHex(result.slice(x, x + 16)))
-        // }
-        return result;
+        const result = await readGpuBuffer(shadersLine[shadersLine.length - 1].bufferOut, 0, 1024, commandEncoder)
+        if (result[0] !== 0xffffffff) {
+          const seedOffset = result[0] + 1
+          return (await readGpuBuffer(buffers.seeds, seedOffset, 1))[0]
+        }
+        return result[0];
     }
 
     let validSeedShader = null
@@ -205,7 +178,7 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
               .replaceAll('CHECK_COUNT', hashList.length.toString(10))
               .replaceAll('CHECK_KEYS', solanaPkListToWGSLArray(hashList))
             console.time('[COMPILE] ed25519');
-            shaders.pipeline.push(await buildShader(ed25519Code, 'main', WORKGROUP_SIZE / addrCount))
+            shaders.pipeline.push(await buildShader(ed25519Code, 'main', WORKGROUP_SIZE / addrCount, 'ed25519'))
             console.timeEnd('[COMPILE] ed25519');
             swapBuffers()
             return
@@ -213,7 +186,7 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
 
         let secp256k1Code = (await fetch('wgsl/secp256k1.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
         console.time('[COMPILE] secp256k1');
-        const secp256k1Shader = await buildShader(secp256k1Code, 'main', WORKGROUP_SIZE)
+        const secp256k1Shader = await buildShader(secp256k1Code, 'main', WORKGROUP_SIZE, 'secp256k1')
         console.timeEnd('[COMPILE] secp256k1');
         shaders.pipeline.push(secp256k1Shader)
         swapBuffers()
@@ -230,7 +203,8 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
         shaders.pipeline.push({ ...secp256k1Shader, workPerWarp: WORKGROUP_SIZE / addrCount })
         swapBuffers()
 
-        console.time('[COMPILE] keccak/hash160');
+        console.time(`[COMPILE] ${addrType === 'eth' || addrType === 'tron' ? 'keccak' : 'hash160'}`);
+        console.log('hashList:', hashList)
         if (addrType === 'eth' || addrType === 'tron') {
           let keccakCode = (await fetch('wgsl/keccak256.wgsl').then(r => r.text()))
             .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
@@ -250,7 +224,9 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
             .replaceAll('CHECK_HASHES', hash160ToWGSLArray(hashList))
           shaders.pipeline.push(await buildShader(hash160Code, 'main', WORKGROUP_SIZE / addrCount))
         }
-        console.timeEnd('[COMPILE] keccak/hash160');
+        console.timeEnd(`[COMPILE] ${addrType === 'eth' || addrType === 'tron'? 'keccak' : 'hash160'}`)
+
+        return shaders.pipeline
     }
 
     const PRECOMPUTE_TABLE_SIZE = (16 * 32768) * (3 * 32)
@@ -433,7 +409,7 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
       return { ...bindGroup3, pipeline, workPerWarp: WORKGROUP_SIZE }
     }
 
-    async function buildShader(code, entryPoint, workPerWarp) {
+    async function buildShader(code, entryPoint, workPerWarp, name) {
       const module = device.createShaderModule({ code })
       const shaderInfo = await module.getCompilationInfo()
       if (shaderInfo.messages?.length > 0) {
@@ -453,7 +429,7 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
         console.error(e)
         log(`Pipeline creation error: ${e.message}`)
       }
-      return { ...bindGroup, pipeline, workPerWarp }
+      return { name, ...bindGroup, pipeline, workPerWarp }
     }
 
     function swapBuffers() {
@@ -466,17 +442,21 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
         }
     }
 
+    let tableType = null;
+
     return {
         initValidSeedsShader,
-        inferenceMask,
         prepareShaderPipeline,
         async setEccTable(eccType) {
+          tableType = eccType;
           const precomputeTable = await precomputeEccTable(eccType)
           device.queue.writeBuffer(secp256k1PrecomputeBuffer, 0, precomputeTable)
         },
         name: adapter.info.description || adapter.info.vendor,
         clean,
         inference,
+        inferenceMask,
+        inferenceTest,
         buildShader,
     }
 }

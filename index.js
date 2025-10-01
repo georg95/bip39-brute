@@ -111,6 +111,37 @@ async function brutePasswordGPU() {
     window.brute.innerText = 'Brute'
 }
 
+
+function permutations(input) {
+  const tokens = input.split(" ");
+  var MASK = []
+  var MASKLEN = []
+  tokens.map(token => {
+    if (token === "*") { MASKLEN = [2048].concat(MASKLEN); return }
+    const indexes = token.split(",").map(token => biplist.indexOf(token))
+    MASKLEN.unshift(indexes.length)
+    MASK = indexes.concat(MASK)
+  })
+  return {
+    permCount: MASKLEN.reduce((acc, cur) => acc * cur, 1),
+    perm(N) {
+      const selected = new Array(MASKLEN.length);
+      var curOff = 0
+      for (let i = 0; i < MASKLEN.length; i++) {
+        if (MASKLEN[i] === 2048) {
+          selected[MASKLEN.length - 1 - i] = N % 2048;
+        } else {
+          selected[MASKLEN.length - 1 - i] = MASK[curOff + N % MASKLEN[i]];
+          curOff += MASKLEN[i]
+        }
+        N = (N / MASKLEN[i]) | 0;
+      }
+      // console.log('selected:', selected)
+      return selected;
+    }
+  }
+}
+
 async function brutePasswordMask() {
   const MASK = 'zoo zoo zoo zoo zoo zoo zoo zoo zoo abandon,zoo abandon,zoo *'
   console.log('brutePasswordMask', MASK)
@@ -119,20 +150,26 @@ async function brutePasswordMask() {
   const WORKGROUP_SIZE = 64
   const {
     clean,
+    setEccTable,
     inferenceMask,
     prepareShaderPipeline,
   } = await webGPUinit({ BUF_SIZE: batchSize*128*ADDR_COUNT })
-  const { hash160, type } = await addrToScriptHash('0xa968AB07016C0355A33C61Ee5E49D746672A8B4B')
+  // zoo zoo zoo zoo zoo zoo zoo zoo zoo abandon abandon crime
+  const { hash160, type } = await addrToScriptHash('0x082F273Ca8760371899B50F4dB080391403da2c2')
+  await setEccTable(type === 'solana' ? 'ed25519' : 'secp256k1')
   await prepareShaderPipeline({
     mode: 'mask',
     addrType: type,
     addrCount: ADDR_COUNT,
     MNEMONIC: MASK,
     WORKGROUP_SIZE,
-    // zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo crime
     hashList: [hash160]
   })
-  await inferenceMask({ count: batchSize })
+  const res = await inferenceMask({ count: batchSize })
+
+  if (res !== 0xffffffff) {
+    console.log('result:', permutations(MASK).perm(res).map(x => biplist[x]).join(' '))
+  }
   clean()
 }
 
