@@ -84,8 +84,8 @@ fn setMnemoIndexes(w: ptr<function, array<u32, 64>>, indexes: array<u32, 12>) {
     w[15] = 16 * 8; // 16 bytes = 16 * 8 bits;
 }
 
-const MASK = array<u32, 13>(0, 2047, 0, 2047, 2047, 2047, 2047, 2047, 2047, 2047, 2047, 2047, 2047);
-const MASKLEN = array<u32, 12>(2048, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1);
+const MASK = MASK__;
+const MASKLEN = MASKLEN__;
 
 fn permutation(N: u32) -> array<u32, 12> {
     var perm: array<u32, 12>;
@@ -109,8 +109,7 @@ struct Output {
     indices: array<u32>,
 };
 
-@group(0) @binding(0) var<storage, read> input: array<u32>;
-@group(0) @binding(1) var<storage, read_write> output: Output;
+@group(0) @binding(0) var<storage, read_write> output: Output;
 
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {

@@ -1062,9 +1062,6 @@ fn sha512(W: ptr<function, array<u32, 32>>, IV: ptr<function, array<u32, 16>>) {
   W[15] = hlo;
 }
 
-@group(0) @binding(0) var<storage, read> input: array<u32>;
-@group(0) @binding(1) var<storage, read_write> output: array<u32>;
-
 const masks = array<u32, 4>(0x00ffffff, 0xff00ffff, 0xffff00ff, 0xffffff00);
 fn setByteArr(arr: ptr<function, array<u32, 32>>, idx: u32, byte: u32) {
   let i = idx/4;
@@ -1078,6 +1075,7 @@ fn getBIP39Byte(idx: u32) -> u32 {
 
 const MASK = MASK__;
 const MASKLEN = MASKLEN__;
+
 fn permutation(N: u32) -> array<u32, 12> {
     var perm: array<u32, 12>;
     var curOff = 0u;
@@ -1142,12 +1140,22 @@ fn initBuffer(tmp_buf: ptr<function, array<u32, 32>>, seed1: ptr<function, array
   sha512(tmp_buf, seed2);
 }
 
+struct Input {
+    curOffset: u32,
+    indices: array<u32>,
+};
+
+@group(0) @binding(0) var<storage, read> input: Input;
+@group(0) @binding(1) var<storage, read_write> output: array<u32>;
+
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   var tmp_buf: array<u32, 32>;
   var seed1: array<u32, 16>;
   var seed2: array<u32, 16>;
   var dk: array<u32, 16>;
+  // initSeeds(&tmp_buf, &seed1, &seed2, input.indices[input.curOffset + gid.x]);
+  // initSeeds(&tmp_buf, &seed1, &seed2, 6556);
   initSeeds(&tmp_buf, &seed1, &seed2, gid.x);
   initBuffer(&tmp_buf, &seed1, &seed2);
 

@@ -25,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addrlist.onchange = checkInput
   window.addrlist.oninput = checkInput
   checkInput()
+  brutePasswordMask()
 })
 
 async function brutePasswordGPU() {
@@ -37,7 +38,13 @@ async function brutePasswordGPU() {
     const batchSize = 1024 * 32
     const ADDR_COUNT = DERIVE_ADDRESSES
     const WORKGROUP_SIZE = 64
-    const { name, setEccTable, clean, inference, buildShader, swapBuffers } = await webGPUinit({ BUF_SIZE: batchSize*128*ADDR_COUNT })
+    const {
+      name,
+      clean,
+      inference,
+      setEccTable,
+      prepareShaderPipeline,
+    } = await webGPUinit({ BUF_SIZE: batchSize*128*ADDR_COUNT })
     await setEccTable(addrType === 'solana' ? 'ed25519' : 'secp256k1')
     const PASSWORD_LISTS = [
       { url: 'forced-browsing/all.txt', filePasswords: 43135 },
@@ -54,8 +61,12 @@ async function brutePasswordGPU() {
       { url: 'facebook-firstnames.txt', filePasswords: 4347667 },
     ]
     // PASSWORD_LISTS.sort((a, b) => a.filePasswords - b.filePasswords)
-    const pipeline = await buildEntirePipeline({
-        addrType, addrCount: ADDR_COUNT, MNEMONIC: bip39mask, WORKGROUP_SIZE, buildShader, swapBuffers, hashList: addrHash160list
+    const pipeline = await prepareShaderPipeline({
+        addrType,
+        addrCount: ADDR_COUNT,
+        MNEMONIC: bip39mask,
+        WORKGROUP_SIZE,
+        hashList: addrHash160list
     })
     log(`[${name}]\nBruteforce init...`, true)
     let curList = 0
@@ -99,6 +110,32 @@ async function brutePasswordGPU() {
     window.brute.onclick = brutePasswordGPU
     window.brute.innerText = 'Brute'
 }
+
+async function brutePasswordMask() {
+  const MASK = 'zoo zoo zoo zoo zoo zoo zoo zoo zoo abandon,zoo abandon,zoo *'
+  console.log('brutePasswordMask', MASK)
+  const batchSize = 1024 * 2 * 4
+  const ADDR_COUNT = DERIVE_ADDRESSES
+  const WORKGROUP_SIZE = 64
+  const {
+    clean,
+    inferenceMask,
+    prepareShaderPipeline,
+  } = await webGPUinit({ BUF_SIZE: batchSize*128*ADDR_COUNT })
+  const { hash160, type } = await addrToScriptHash('0xa968AB07016C0355A33C61Ee5E49D746672A8B4B')
+  await prepareShaderPipeline({
+    mode: 'mask',
+    addrType: type,
+    addrCount: ADDR_COUNT,
+    MNEMONIC: MASK,
+    WORKGROUP_SIZE,
+    // zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo crime
+    hashList: [hash160]
+  })
+  await inferenceMask({ count: batchSize })
+  clean()
+}
+
 
 async function validateInput() {
   window.output.innerHTML = ''
