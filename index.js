@@ -111,41 +111,10 @@ async function brutePasswordGPU() {
     window.brute.innerText = 'Brute'
 }
 
-
-function permutations(input) {
-  const tokens = input.split(" ");
-  var MASK = []
-  var MASKLEN = []
-  tokens.map(token => {
-    if (token === "*") { MASKLEN = [2048].concat(MASKLEN); return }
-    const indexes = token.split(",").map(token => biplist.indexOf(token))
-    MASKLEN.unshift(indexes.length)
-    MASK = indexes.concat(MASK)
-  })
-  return {
-    permCount: MASKLEN.reduce((acc, cur) => acc * cur, 1),
-    perm(N) {
-      const selected = new Array(MASKLEN.length);
-      var curOff = 0
-      for (let i = 0; i < MASKLEN.length; i++) {
-        if (MASKLEN[i] === 2048) {
-          selected[MASKLEN.length - 1 - i] = N % 2048;
-        } else {
-          selected[MASKLEN.length - 1 - i] = MASK[curOff + N % MASKLEN[i]];
-          curOff += MASKLEN[i]
-        }
-        N = (N / MASKLEN[i]) | 0;
-      }
-      // console.log('selected:', selected)
-      return selected;
-    }
-  }
-}
-
 async function brutePasswordMask() {
-  const MASK = 'zoo zoo zoo zoo zoo zoo zoo zoo zoo abandon,zoo abandon,zoo *'
+  const MASK = '* zoo zoo zoo zoo zoo zoo zoo zoo abandon abandon *'
   console.log('brutePasswordMask', MASK)
-  const batchSize = 1024 * 2 * 4
+  const batchSize = 1024 * 32
   const ADDR_COUNT = DERIVE_ADDRESSES
   const WORKGROUP_SIZE = 64
   const {
@@ -165,10 +134,14 @@ async function brutePasswordMask() {
     WORKGROUP_SIZE,
     hashList: [hash160]
   })
-  const res = await inferenceMask({ count: batchSize })
-
-  if (res !== 0xffffffff) {
-    console.log('result:', permutations(MASK).perm(res).map(x => biplist[x]).join(' '))
+  const { perm, permCount } = permutations(MASK)
+  console.log('permCount:', permCount / 16 | 0)
+  for (let i = 0; i < 8; i++) {
+    const res = await inferenceMask({ count: batchSize })
+    if (res !== 0xffffffff) {
+      console.log('result:', perm(res).map(x => biplist[x]).join(' '))
+      break
+    }
   }
   clean()
 }

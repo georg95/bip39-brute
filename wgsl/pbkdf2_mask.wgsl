@@ -1140,12 +1140,13 @@ fn initBuffer(tmp_buf: ptr<function, array<u32, 32>>, seed1: ptr<function, array
   sha512(tmp_buf, seed2);
 }
 
-struct Input {
+struct SeedIndexes {
+    counter: u32,
     curOffset: u32,
     indices: array<u32>,
 };
 
-@group(0) @binding(0) var<storage, read> input: Input;
+@group(0) @binding(0) var<storage, read> input: SeedIndexes;
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;
 
 @compute @workgroup_size(WORKGROUP_SIZE)

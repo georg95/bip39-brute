@@ -104,12 +104,13 @@ fn permutation(N: u32) -> array<u32, 12> {
 }
 
 
-struct Output {
+struct SeedIndexes {
     counter: atomic<u32>,
+    offset: u32,
     indices: array<u32>,
 };
 
-@group(0) @binding(0) var<storage, read_write> output: Output;
+@group(0) @binding(0) var<storage, read_write> output: SeedIndexes;
 
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -118,7 +119,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var buf: array<u32, BUF_SIZE>;
     var curItem = 0u;
     for (var i = 0u; i < MNEMONICS_PER_THREAD; i++) {
-        let index = gid.x*MNEMONICS_PER_THREAD + i;
+        let index = output.offset + gid.x*MNEMONICS_PER_THREAD + i;
         let perm = permutation(index);
         setMnemoIndexes(&w, perm);
         sha256(&w, &out);

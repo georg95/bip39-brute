@@ -97,26 +97,29 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
         return result;
     }
 
-    let lastCounter = 0
-    let seedsAmount = 0
+    let curSeedsBatch = 0
+    let seedsBatchAmount = 0
+    let seedsGenerated = 0
     async function inferenceMask({ count }) {
-        assert(validSeedShader, 'call initValidSeedsShader first')
-        if (seedsAmount - lastCounter <= 0) {
-            const AVG_IVALID_SEEDS_PER_VALID = 1
-            const SEED_GEN_MULTIPLIER = 1
-            device.queue.writeBuffer(buffers.seeds, 0, new Uint32Array(1))
+        assert(validSeedsShader, 'call initValidSeedsShader first')
+        if (seedsBatchAmount - curSeedsBatch <= 0) {
+            const AVG_IVALID_SEEDS_PER_VALID = 16
+            const SEED_GEN_MULTIPLIER = 3.95
+            device.queue.writeBuffer(buffers.seeds, 0, new Uint32Array([0, seedsGenerated]))
+            seedsGenerated += AVG_IVALID_SEEDS_PER_VALID * SEED_GEN_MULTIPLIER * count
             const commandEncoder = device.createCommandEncoder()
             const passEncoder = commandEncoder.beginComputePass()
-            passEncoder.setBindGroup(0, validSeedShader.binding)
-            passEncoder.setPipeline(validSeedShader.pipeline)
-            passEncoder.dispatchWorkgroups(Math.ceil(AVG_IVALID_SEEDS_PER_VALID * SEED_GEN_MULTIPLIER * count / validSeedShader.workPerWarp))
+            passEncoder.setBindGroup(0, validSeedsShader.binding)
+            passEncoder.setPipeline(validSeedsShader.pipeline)
+            passEncoder.dispatchWorkgroups(Math.ceil(AVG_IVALID_SEEDS_PER_VALID * SEED_GEN_MULTIPLIER * count / validSeedsShader.workPerWarp))
             passEncoder.end()
             const result = await readGpuBuffer(buffers.seeds, 0, 1024, commandEncoder)
-            lastCounter = 0
-            seedsAmount = result[0]
+            curSeedsBatch = 0
+            seedsBatchAmount = result[0]
+            console.log('Generated', seedsBatchAmount, 'seed candidates')
         }
-        device.queue.writeBuffer(buffers.seeds, 0, new Uint32Array([lastCounter]))
-        lastCounter += count
+        device.queue.writeBuffer(buffers.seeds, 0, new Uint32Array([0, curSeedsBatch]))
+        curSeedsBatch += count
         const commandEncoder = device.createCommandEncoder()
         const passEncoder = commandEncoder.beginComputePass()
         let shadersLine = shaders.pipeline
@@ -128,14 +131,15 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
         }
         passEncoder.end()
         const result = await readGpuBuffer(shadersLine[shadersLine.length - 1].bufferOut, 0, 1024, commandEncoder)
+        console.log('Checked', count, 'seed candidates')
         if (result[0] !== 0xffffffff) {
-          const seedOffset = result[0] + 1
+          const seedOffset = result[0] + 2 + (curSeedsBatch - count)
           return (await readGpuBuffer(buffers.seeds, seedOffset, 1))[0]
         }
         return result[0];
     }
 
-    let validSeedShader = null
+    let validSeedsShader = null
     let shaders = {
       pipeline: null,
       mode: null,
@@ -382,7 +386,7 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
         console.error(e)
         log(`Pipeline creation error: ${e.message}`)
       }
-      validSeedShader = { ...bindGroupSeeds, pipeline, workPerWarp: WORKGROUP_SIZE * MNEMONICS_PER_THREAD }
+      validSeedsShader = { ...bindGroupSeeds, pipeline, workPerWarp: WORKGROUP_SIZE * MNEMONICS_PER_THREAD }
     }
 
     async function Pbkdf2MaskShader(bip39mask, WORKGROUP_SIZE) {
@@ -961,14 +965,37 @@ async function sha512round(mnemo, XOR) {
   return outMemory.slice()
 }
 
+function permutations(mask) {
+  let tokens = mask.split(" "), MASK = [], MASKLEN = []
+  tokens.map(token => {
+    if (token === "*") { MASKLEN = [2048].concat(MASKLEN); return }
+    const indexes = token.split(",").map(token => biplist.indexOf(token))
+    MASKLEN.unshift(indexes.length)
+    MASK = indexes.concat(MASK)
+  })
+  return {
+    MASK,
+    MASKLEN,
+    permCount: MASKLEN.reduce((acc, cur) => acc * cur, 1),
+    perm(N) {
+      const selected = new Array(MASKLEN.length);
+      var curOff = 0
+      for (let i = 0; i < MASKLEN.length; i++) {
+        if (MASKLEN[i] === 2048) {
+          selected[MASKLEN.length - 1 - i] = N % 2048;
+        } else {
+          selected[MASKLEN.length - 1 - i] = MASK[curOff + N % MASKLEN[i]];
+          curOff += MASKLEN[i]
+        }
+        N = (N / MASKLEN[i]) | 0;
+      }
+      return selected;
+    }
+  }
+}
+
 function setPermutationsMask(mask, code) {
-    let tokens = mask.split(" "), MASK = [], MASKLEN = []
-    tokens.map(token => {
-        if (token === "*") { MASKLEN = [2048].concat(MASKLEN); return }
-        const indexes = token.split(",").map(token => biplist.indexOf(token))
-        MASKLEN.unshift(indexes.length)
-        MASK = indexes.concat(MASK)
-    })
+    const { MASK, MASKLEN } = permutations(mask)
     return code.replaceAll('MASK__', `array<u32, ${MASK.length}>(${MASK.join(', ')})`)
         .replaceAll('MASKLEN__', `array<u32, ${MASKLEN.length}>(${MASKLEN.join(', ')})`)            
 }
