@@ -51,6 +51,7 @@ async function brutePasswordGPU({ bip39mask, hashList, addrType }) {
       setEccTable,
       prepareShaderPipeline,
     } = await webGPUinit({ BUF_SIZE: batchSize*128*ADDR_COUNT })
+    log(`[${name}]\nBruteforce init...`, true)
     await setEccTable(addrType === 'solana' ? 'ed25519' : 'secp256k1')
     const PASSWORD_LISTS = [
       { url: 'forced-browsing/all.txt', filePasswords: 43135 },
@@ -74,7 +75,6 @@ async function brutePasswordGPU({ bip39mask, hashList, addrType }) {
         WORKGROUP_SIZE,
         hashList,
     })
-    log(`[${name}]\nBruteforce init...`, true)
     let curList = 0
     let listName = PASSWORD_LISTS[curList].url
     let filePasswords = PASSWORD_LISTS[curList++].filePasswords
@@ -115,7 +115,6 @@ async function brutePasswordGPU({ bip39mask, hashList, addrType }) {
     clean()
     window.brute.onclick = brutePasswordGPU
     window.brute.innerText = 'Brute'
-    validateInput()
 }
 
 async function bruteSeedGPU({ bip39mask, hashList, addrType }) {
