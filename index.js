@@ -1,6 +1,14 @@
 let DERIVE_ADDRESSES = 1
 document.addEventListener('DOMContentLoaded', () => {
-  window.brute.onclick = brutePasswordGPU
+  window.brute.onclick = async () => {
+    const { mode, bip39mask, addrHash160list, addrTypes } = await validateInput()
+
+    if (mode === 'mask') {
+      bruteSeedGPU({ bip39mask, hashList: addrHash160list, addrType: addrTypes[0] })
+    } else {
+      brutePasswordGPU({ bip39mask, hashList: addrHash160list, addrType: addrTypes[0] })
+    }
+  }
   window['show-settings'].onclick = () => {
     window['brute-pane'].style.display = 'none'
     window['settings-pane'].style.display = 'block'
@@ -8,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
   window['hide-settings'].onclick = () => {
     window['brute-pane'].style.display = 'block'
     window['settings-pane'].style.display = 'none'
+    validateInput()
   }
   window.derive.oninput = () => {
     DERIVE_ADDRESSES = 2 ** Number(window.derive.value)
@@ -25,13 +34,10 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addrlist.onchange = checkInput
   window.addrlist.oninput = checkInput
   checkInput()
-  brutePasswordMask()
 })
 
-async function brutePasswordGPU() {
+async function brutePasswordGPU({ bip39mask, hashList, addrType }) {
     let stopped = false
-    const { bip39mask, addrHash160list, addrTypes } = await validateInput()
-    const addrType = addrTypes[0]
     window.brute.onclick = () => { stopped = true }
     window.brute.innerText = '🛑 STOP'
     
@@ -66,7 +72,7 @@ async function brutePasswordGPU() {
         addrCount: ADDR_COUNT,
         MNEMONIC: bip39mask,
         WORKGROUP_SIZE,
-        hashList: addrHash160list
+        hashList,
     })
     log(`[${name}]\nBruteforce init...`, true)
     let curList = 0
@@ -109,37 +115,44 @@ async function brutePasswordGPU() {
     clean()
     window.brute.onclick = brutePasswordGPU
     window.brute.innerText = 'Brute'
+    validateInput()
 }
 
-async function brutePasswordMask() {
-  const MASK = '* zoo zoo zoo zoo zoo zoo zoo zoo abandon abandon *'
-  console.log('brutePasswordMask', MASK)
+async function bruteSeedGPU({ bip39mask, hashList, addrType }) {
   const batchSize = 1024 * 32
   const ADDR_COUNT = DERIVE_ADDRESSES
   const WORKGROUP_SIZE = 64
   const {
+    name,
     clean,
     setEccTable,
     inferenceMask,
     prepareShaderPipeline,
   } = await webGPUinit({ BUF_SIZE: batchSize*128*ADDR_COUNT })
-  // zoo zoo zoo zoo zoo zoo zoo zoo zoo abandon abandon crime
-  const { hash160, type } = await addrToScriptHash('0x082F273Ca8760371899B50F4dB080391403da2c2')
-  await setEccTable(type === 'solana' ? 'ed25519' : 'secp256k1')
+  log(`[${name}]\nBruteforce init...`, true)
+  await setEccTable(addrType === 'solana' ? 'ed25519' : 'secp256k1')
   await prepareShaderPipeline({
     mode: 'mask',
-    addrType: type,
+    addrType,
     addrCount: ADDR_COUNT,
-    MNEMONIC: MASK,
+    MNEMONIC: bip39mask,
     WORKGROUP_SIZE,
-    hashList: [hash160]
+    hashList,
   })
-  const { perm, permCount } = permutations(MASK)
+  const { perm, permCount } = permutations(bip39mask)
   console.log('permCount:', permCount / 16 | 0)
-  for (let i = 0; i < 8; i++) {
-    const res = await inferenceMask({ count: batchSize })
-    if (res !== 0xffffffff) {
-      console.log('result:', perm(res).map(x => biplist[x]).join(' '))
+  while (true) {
+    const start = performance.now()
+    const { ended, found, progress } = await inferenceMask({ count: batchSize, permCount })
+    const time = (performance.now() - start) / 1000
+    const speed = batchSize / time | 0
+    log(`[${name}]\n${progress * 100 | 0}% ${speed} seeds/s`, true)
+    if (ended) {
+      if (found) {
+        log(`FOUND :)\nSeed: ${perm(found).map(x => biplist[x]).join(' ')}`, true)
+      } else {
+        log(`Seed not found :(`, true)
+      }
       break
     }
   }
@@ -166,8 +179,13 @@ async function validateInput() {
       }
     }
   }
-  if (asterisks > 2) {
-    window.output.innerHTML += `Can't brute with ${asterisks} * - too long to brute\n`
+  const { permCount } = permutations(words.join(' '))
+  if (permCount > 2 ** 32) {
+    window.output.innerHTML += `Can't brute more than 4 billion variants\n`
+    result = false
+  }
+  if (words.length !== 12 && permCount > 1) {
+    window.output.innerHTML += `Only 12 words supported for masked mode\n`
     result = false
   }
   const addrlist = window.addrlist.value.split('\n').map(x => x.trim()).filter(x => x)
@@ -191,7 +209,9 @@ async function validateInput() {
   if (addrTypes.length > 1) {
     window.output.innerHTML += `WARNING! Multiple address types: ${addrTypes.join(', ')}\nOnly ${addrTypes[0]} will be used\n`;
   }
-  return result && { bip39mask: words.join(' '), addrHash160list, addrTypes }
+  const mode = permCount > 1 ? 'mask' : 'password'
+  log(`\nMode:    ${mode}\nAddress: ${addrTypes[0]}\nDerived: ${DERIVE_ADDRESSES}`)
+  return result && { mode: permCount > 1 ? 'mask' : 'password', bip39mask: words.join(' '), addrHash160list, addrTypes }
 }
 
 async function addrToScriptHash(address) {

@@ -18,9 +18,13 @@ Password: gauffers (usernames.txt password list)
 ### TODO:
 
 - [x] Password bruteforce mode
+- [x] Missing words bruteforce mode
 - [x] Legacy/P2SH/Segwit bitcoin addresses
 - [x] Ethereum/BSC/Tron wallets
 - [x] Solana wallets
 - [x] Multiple derivation addresses
-- [x] Bruteforce settings
-- [ ] Missing words bruteforce mode
+- [ ] 15/18/24 words support for mask mode
+- [ ] More than 4 billion permutation support
+- [ ] Optimize performance
+- [ ] Better UI/UX
+- [ ] Readme docs and examples

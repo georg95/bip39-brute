@@ -100,23 +100,27 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
     let curSeedsBatch = 0
     let seedsBatchAmount = 0
     let seedsGenerated = 0
-    async function inferenceMask({ count }) {
+    async function inferenceMask({ count, permCount }) {
         assert(validSeedsShader, 'call initValidSeedsShader first')
-        if (seedsBatchAmount - curSeedsBatch <= 0) {
-            const AVG_IVALID_SEEDS_PER_VALID = 16
-            const SEED_GEN_MULTIPLIER = 3.95
+        const AVG_IVALID_SEEDS_PER_VALID = 16
+        const SEED_GEN_MULTIPLIER = 3.9
+        const SEED_GEN = Math.ceil(AVG_IVALID_SEEDS_PER_VALID * SEED_GEN_MULTIPLIER * count)
+        if (curSeedsBatch >= seedsBatchAmount) {
+            if (seedsGenerated >= permCount) {
+              return { ended: true, found: null }
+            }
             device.queue.writeBuffer(buffers.seeds, 0, new Uint32Array([0, seedsGenerated]))
-            seedsGenerated += AVG_IVALID_SEEDS_PER_VALID * SEED_GEN_MULTIPLIER * count
+            const seedsToGeneate = Math.min(permCount - seedsGenerated, SEED_GEN)
+            seedsGenerated += seedsToGeneate
             const commandEncoder = device.createCommandEncoder()
             const passEncoder = commandEncoder.beginComputePass()
             passEncoder.setBindGroup(0, validSeedsShader.binding)
             passEncoder.setPipeline(validSeedsShader.pipeline)
-            passEncoder.dispatchWorkgroups(Math.ceil(AVG_IVALID_SEEDS_PER_VALID * SEED_GEN_MULTIPLIER * count / validSeedsShader.workPerWarp))
+            passEncoder.dispatchWorkgroups(Math.ceil(seedsToGeneate / validSeedsShader.workPerWarp))
             passEncoder.end()
             const result = await readGpuBuffer(buffers.seeds, 0, 1024, commandEncoder)
             curSeedsBatch = 0
             seedsBatchAmount = result[0]
-            console.log('Generated', seedsBatchAmount, 'seed candidates')
         }
         device.queue.writeBuffer(buffers.seeds, 0, new Uint32Array([0, curSeedsBatch]))
         curSeedsBatch += count
@@ -131,12 +135,13 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
         }
         passEncoder.end()
         const result = await readGpuBuffer(shadersLine[shadersLine.length - 1].bufferOut, 0, 1024, commandEncoder)
-        console.log('Checked', count, 'seed candidates')
         if (result[0] !== 0xffffffff) {
           const seedOffset = result[0] + 2 + (curSeedsBatch - count)
-          return (await readGpuBuffer(buffers.seeds, seedOffset, 1))[0]
+          return { ended: true, found: (await readGpuBuffer(buffers.seeds, seedOffset, 1))[0] }
         }
-        return result[0];
+        const progressPerBatch = SEED_GEN / permCount
+        const batchProgress = progressPerBatch * Math.min(1, curSeedsBatch / seedsBatchAmount)
+        return { ended: false, found: null, progress: (seedsGenerated - SEED_GEN)/permCount + batchProgress }
     }
 
     let validSeedsShader = null
@@ -151,16 +156,20 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
         shaders.pipeline = []
         shaders.mode = mode
         if (mode === 'mask') {
+          console.time('[COMPILE] valid seeds generator');
           await initValidSeedsShader(MNEMONIC, WORKGROUP_SIZE)
+          console.timeEnd('[COMPILE] valid seeds generator');
+          console.time('[COMPILE] pbkdf2');
           shaders.pipeline.push(await Pbkdf2MaskShader(MNEMONIC, WORKGROUP_SIZE))
+          console.timeEnd('[COMPILE] pbkdf2');
           swapBuffers()
         } else {
+          console.time('[COMPILE] pbkdf2');
           let pbkdf2Code = (await fetch('wgsl/pbkdf2_template.wgsl').then(r => r.text()))
           pbkdf2Code = (await unrolledSha512_wgpu(pbkdf2Code, MNEMONIC))
               .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
           // unrolled code
           // console.log(pbkdf2Code)
-          console.time('[COMPILE] pbkdf2');
           shaders.pipeline.push(await buildShader(pbkdf2Code, 'main', WORKGROUP_SIZE))
           console.timeEnd('[COMPILE] pbkdf2');
           swapBuffers()
