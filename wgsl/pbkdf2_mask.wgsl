@@ -1076,15 +1076,15 @@ fn getBIP39Byte(idx: u32) -> u32 {
 const MASK = MASK__;
 const MASKLEN = MASKLEN__;
 
-fn permutation(N: u32) -> array<u32, 12> {
-    var perm: array<u32, 12>;
+fn permutation(N: u32) -> array<u32, WORD_COUNT> {
+    var perm: array<u32, WORD_COUNT>;
     var curOff = 0u;
     var n = N;
-    for (var i = 0; i < 12; i++) {
+    for (var i = 0; i < WORD_COUNT; i++) {
         if (MASKLEN[i] == 2048) {
-            perm[11 - i] = n % 2048;
+            perm[WORD_COUNT - 1 - i] = n % 2048;
         } else {
-            perm[11 - i] = MASK[curOff + n % MASKLEN[i]];
+            perm[WORD_COUNT - 1 - i] = MASK[curOff + n % MASKLEN[i]];
             curOff += MASKLEN[i];
         }
         n = n / MASKLEN[i];
@@ -1092,20 +1092,73 @@ fn permutation(N: u32) -> array<u32, 12> {
     return perm;
 }
 
+/*
+pub fn Sha512hash32(b: []const u8, out: *[64]u8) void {
+    var seed = IV;
+    var off: usize = 0;
+    var buf: [128]u8 = [_]u8{0} ** 128;
+    var buf32: [32]u32 = [_]u32{0} ** 32;
+    while (off + 128 <= b.len) : (off += 128) {
+        for (0..buf32.len) |j| buf32[j] = mem.readInt(u32, b[off..][4 * j ..][0..4], .big);
+        seed = sha512(seed, buf32[0..]);
+    }
+    const b_slice = b[off..];
+    @memcpy(buf[0..b_slice.len], b_slice);
+    buf[b_slice.len] = 0x80;
+    buf[127] = @as(u8, @intCast(b.len & 0x1f)) << 3;
+    buf[126] = @as(u8, @intCast((b.len >> 5) & 0x1f)); // max 32k len
+    for (0..buf32.len) |j| buf32[j] = mem.readInt(u32, buf[4 * j ..][0..4], .big);
+    seed = sha512(seed, buf32[0..]);
+    const rr = seed[0 .. 64 / 4];
+    for (rr, 0..) |s, j| {
+        mem.writeInt(u32, out[4 * j ..][0..4], s, .big);
+    }
+}
+*/
+
 fn setSeed(res: ptr<function, array<u32, 32>>, N: u32) {
+  var curSeed = array<u32,16>(
+      0x6a09e667, 0xf3bcc908, 0xbb67ae85, 0x84caa73b,
+      0x3c6ef372, 0xfe94f82b, 0xa54ff53a, 0x5f1d36f1,
+      0x510e527f, 0xade682d1, 0x9b05688c, 0x2b3e6c1f,
+      0x1f83d9ab, 0xfb41bd6b, 0x5be0cd19, 0x137e2179,
+  );
   let perm = permutation(N);
   for (var i = 0; i < 32; i++) { res[i] = 0; }
   var curOffset = 0u;
-  for (var j = 0u; j < 12u; j++) {
+  var fullBlocks = 0u;
+  for (var j = 0; j < WORD_COUNT; j++) {
     var index = perm[j];
     for (var i = BIP39[index]; i < BIP39[index + 1]; i++) {
       setByteArr(res, curOffset, getBIP39Byte(i));
       curOffset++;
+      if (curOffset == 128u) {
+        sha512(res, &curSeed);
+        for (var i = 0; i < 16; i++) { curSeed[i] = res[i]; }
+        for (var i = 0; i < 32; i++) { res[i] = 0; }
+        curOffset = 0u;
+        fullBlocks += 128u;
+      }
     }
-    if (j != 11) {
+    if (j != WORD_COUNT - 1) {
       setByteArr(res, curOffset, 0x20u);
       curOffset++;
+      if (curOffset == 128u) {
+        sha512(res, &curSeed);
+        for (var i = 0; i < 16; i++) { curSeed[i] = res[i]; }
+        for (var i = 0; i < 32; i++) { res[i] = 0; }
+        curOffset = 0u;
+        fullBlocks += 128u;
+      }
     }
+  }
+  if (fullBlocks > 0) {
+    let totalLen = fullBlocks + curOffset;
+    setByteArr(res, curOffset, 0x80);
+    setByteArr(res, 127, (totalLen & 0x1f) << 3);
+    setByteArr(res, 126, ((totalLen >> 5) & 0x1f));
+    sha512(res, &curSeed);
+    for (var i = 16; i < 32; i++) { res[i] = 0; }
   }
 }
 

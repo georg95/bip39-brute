@@ -138,16 +138,20 @@ async function bruteSeedGPU({ bip39mask, hashList, addrType }) {
     WORKGROUP_SIZE,
     hashList,
   })
-  const { perm, permCount } = permutations(bip39mask)
-  console.log('permCount:', permCount / 16 | 0)
+  const { perm, permCount, seedsPerValid } = permutations(bip39mask)
+  console.log('permCount:', permCount / seedsPerValid | 0)
   while (true) {
     const start = performance.now()
-    const { ended, found, progress } = await inferenceMask({ count: batchSize, permCount })
+    const { ended, found, progress } = await inferenceMask({
+      count: batchSize,
+      permCount,
+      seedsPerValid,
+    })
     const time = (performance.now() - start) / 1000
     const speed = batchSize / time | 0
     log(`[${name}]\n${progress * 100 | 0}% ${speed} seeds/s`, true)
     if (ended) {
-      if (found) {
+      if (found !== null) {
         log(`FOUND :)\nSeed: ${perm(found).map(x => biplist[x]).join(' ')}`, true)
       } else {
         log(`Seed not found :(`, true)
@@ -181,10 +185,6 @@ async function validateInput() {
   const { permCount } = permutations(words.join(' '))
   if (permCount > 2 ** 32) {
     window.output.innerHTML += `Can't brute more than 4 billion variants\n`
-    result = false
-  }
-  if (words.length !== 12 && permCount > 1) {
-    window.output.innerHTML += `Only 12 words supported for masked mode\n`
     result = false
   }
   const addrlist = window.addrlist.value.split('\n').map(x => x.trim()).filter(x => x)

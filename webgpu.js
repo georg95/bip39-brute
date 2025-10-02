@@ -100,11 +100,10 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
     let curSeedsBatch = 0
     let seedsBatchAmount = 0
     let seedsGenerated = 0
-    async function inferenceMask({ count, permCount }) {
+    async function inferenceMask({ count, permCount, seedsPerValid }) {
         assert(validSeedsShader, 'call initValidSeedsShader first')
-        const AVG_IVALID_SEEDS_PER_VALID = 16
         const SEED_GEN_MULTIPLIER = 3.9
-        const SEED_GEN = Math.ceil(AVG_IVALID_SEEDS_PER_VALID * SEED_GEN_MULTIPLIER * count)
+        const SEED_GEN = Math.ceil(seedsPerValid * SEED_GEN_MULTIPLIER * count)
         if (curSeedsBatch >= seedsBatchAmount) {
             if (seedsGenerated >= permCount) {
               return { ended: true, found: null }
@@ -121,6 +120,11 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
             const result = await readGpuBuffer(buffers.seeds, 0, 1024, commandEncoder)
             curSeedsBatch = 0
             seedsBatchAmount = result[0]
+            console.log('seeds:', seedsBatchAmount)
+            // for (let i = 2; i < 10; i++) {
+            //   const mask = '* * moon flag weapon shed cushion vacant write distance neck glimpse come cricket congress clarify kid bunker clean minor ivory beach grunt cabin'
+            //   console.log(result[i], permutations(mask).perm(result[i]).map(x => biplist[x]).join(' '))
+            // }
         }
         device.queue.writeBuffer(buffers.seeds, 0, new Uint32Array([0, curSeedsBatch]))
         curSeedsBatch += count
@@ -377,6 +381,7 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
           .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
           .replaceAll('MNEMONICS_PER_THREAD', MNEMONICS_PER_THREAD.toString(10))
           .replaceAll('BUF_SIZE', BUF_SIZE.toString(10))
+          .replaceAll('WORD_COUNT', (bip39mask.split(' ').length).toString(10))
       const module = device.createShaderModule({ code: mnemonicFilterCode })
       const shaderInfo = await module.getCompilationInfo()
       if (shaderInfo.messages?.length > 0) {
@@ -400,7 +405,8 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
 
     async function Pbkdf2MaskShader(bip39mask, WORKGROUP_SIZE) {
       let pbkdf2Code = setPermutationsMask(bip39mask, (await fetch('wgsl/pbkdf2_mask.wgsl').then(r => r.text())))
-          .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))   
+          .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10)) 
+          .replaceAll('WORD_COUNT', (bip39mask.split(' ').length).toString(10))   
       const module = device.createShaderModule({ code: pbkdf2Code })
       const shaderInfo = await module.getCompilationInfo()
       if (shaderInfo.messages?.length > 0) {
@@ -982,9 +988,14 @@ function permutations(mask) {
     MASKLEN.unshift(indexes.length)
     MASK = indexes.concat(MASK)
   })
+  let seedsPerValid = 16
+  if (tokens.length === 24) { seedsPerValid = 256 }
+  if (tokens.length === 18) { seedsPerValid = 64 }
+  if (tokens.length === 15) { seedsPerValid = 32 }
   return {
     MASK,
     MASKLEN,
+    seedsPerValid,
     permCount: MASKLEN.reduce((acc, cur) => acc * cur, 1),
     perm(N) {
       const selected = new Array(MASKLEN.length);

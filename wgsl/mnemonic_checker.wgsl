@@ -66,43 +66,40 @@ fn setByteArr(arr: ptr<function, array<u32, 64>>, idx: u32, byte: u32) {
   arr[i] = (arr[i] & masks[sh]) + (byte << (24 - sh * 8));
 }
 
-fn setMnemoIndexes(w: ptr<function, array<u32, 64>>, indexes: array<u32, 12>) {
+fn setMnemoIndexes(w: ptr<function, array<u32, 64>>, indexes: array<u32, WORD_COUNT>) {
     for (var i = 0; i < 16; i++) {
         w[i] = 0;
     }
     var acc = 0u;
     var accBits = 0u;
     var j = 0u;
-    for (var i = 0; i < 12; i++) {
+    for (var i = 0; i < WORD_COUNT; i++) {
         acc = (acc << 11u) | indexes[i];
         accBits += 3; setByteArr(w, j, (acc >> accBits) & 0xff); j++;
         if (accBits >= 8) {
             accBits -= 8; setByteArr(w, j, (acc >> accBits) & 0xff); j++;
         }
     }
-    w[4] = 0x80000000;
-    w[15] = 16 * 8; // 16 bytes = 16 * 8 bits;
 }
 
 const MASK = MASK__;
 const MASKLEN = MASKLEN__;
 
-fn permutation(N: u32) -> array<u32, 12> {
-    var perm: array<u32, 12>;
+fn permutation(N: u32) -> array<u32, WORD_COUNT> {
+    var perm: array<u32, WORD_COUNT>;
     var curOff = 0u;
     var n = N;
-    for (var i = 0; i < 12; i++) {
+    for (var i = 0; i < WORD_COUNT; i++) {
         if (MASKLEN[i] == 2048) {
-            perm[11 - i] = n % 2048;
+            perm[WORD_COUNT - 1 - i] = n % 2048;
         } else {
-            perm[11 - i] = MASK[curOff + n % MASKLEN[i]];
+            perm[WORD_COUNT - 1 - i] = MASK[curOff + n % MASKLEN[i]];
             curOff += MASKLEN[i];
         }
         n = n / MASKLEN[i];
     }
     return perm;
 }
-
 
 struct SeedIndexes {
     counter: atomic<u32>,
@@ -122,8 +119,20 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let index = output.offset + gid.x*MNEMONICS_PER_THREAD + i;
         let perm = permutation(index);
         setMnemoIndexes(&w, perm);
+        let byte32 = w[8] >> 24;
+        // sha256 padding
+        if (WORD_COUNT == 12) {
+            setByteArr(&w, 16, 0x80);
+            w[15] = 16 * 8;
+        }
+        if (WORD_COUNT == 24) {
+            setByteArr(&w, 32, 0x80);
+            w[15] = 32 * 8;
+        }
         sha256(&w, &out);
-        let isMnemonicValid = (out[0] >> 28) == (perm[11] & 0x0f);
+        var isMnemonicValid: bool = false;
+        if (WORD_COUNT == 12) { isMnemonicValid = (out[0] >> 28) == (perm[11] & 0x0f); }
+        if (WORD_COUNT == 24) { isMnemonicValid = (out[0] >> 24) == byte32; }
         if (isMnemonicValid) {
             buf[curItem] = index;
             curItem++;
