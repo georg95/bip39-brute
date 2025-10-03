@@ -110,6 +110,7 @@ const TESTS = {
         const MASK = 'chimney embody pulp lawsuit doctor diary hope gun motion coyote flip desert'
         let pbkdf2Code = setPermutationsMask(MASK, (await fetch('wgsl/pbkdf2_mask.wgsl').then(r => r.text())))
             .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))            
+            .replaceAll('WORD_COUNT', MASK.split(' ').length.toString(10))
         const shaders = [await gpu.buildShader(pbkdf2Code, 'main', WORKGROUP_SIZE)]
         const inp = new Uint32Array(32).fill(0)
         const MNEMONIC_SEED = '6e7f9c85c909c1f37e553ada9039cc705b73a441685db2468c8d2b8409fa9c14e27ad6c464b34485a820d18c3bc2cb78e31a9423af437d41ae4b0a26e94c695e'
@@ -179,7 +180,7 @@ async function runBenchmark(options) {
         log(`\n${mode}:`);
         const { inp, check, shaders } = await TESTS[mode]({ passwords, MNEMONIC, WORKGROUP_SIZE }, gpu);
         await new Promise(res => setTimeout(res, 100)) // flush text
-        for (let i = 0; i < 1; i++) {
+        for (let i = 0; i < 12; i++) {
             let batchSize = 64 * (2 ** i), time = Infinity, out;
             for (let x = 0; x < 3; x++) {
                 const start = performance.now()

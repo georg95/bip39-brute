@@ -23,7 +23,7 @@ Password: gauffers (usernames.txt password list)
 - [x] Ethereum/BSC/Tron wallets
 - [x] Solana wallets
 - [x] Multiple derivation addresses
-- [ ] 15/18/24 words support for mask mode
+- [x] 12/15/18/24 words support
 - [ ] More than 4 billion permutation support
 - [ ] Optimize performance
 - [ ] Better UI/UX

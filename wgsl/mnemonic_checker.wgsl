@@ -121,17 +121,16 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         setMnemoIndexes(&w, perm);
         let byte32 = w[8] >> 24;
         // sha256 padding
-        if (WORD_COUNT == 12) {
-            setByteArr(&w, 16, 0x80);
-            w[15] = 16 * 8;
-        }
-        if (WORD_COUNT == 24) {
-            setByteArr(&w, 32, 0x80);
-            w[15] = 32 * 8;
-        }
+        var permIndex = 0;
+        if (WORD_COUNT == 12) { setByteArr(&w, 16, 0x80); w[15] = 16 * 8; permIndex = 11; }
+        if (WORD_COUNT == 15) { setByteArr(&w, 20, 0x80); w[15] = 20 * 8; permIndex = 14; }
+        if (WORD_COUNT == 18) { setByteArr(&w, 24, 0x80); w[15] = 24 * 8; permIndex = 17; }
+        if (WORD_COUNT == 24) { setByteArr(&w, 32, 0x80); w[15] = 32 * 8; }
         sha256(&w, &out);
         var isMnemonicValid: bool = false;
-        if (WORD_COUNT == 12) { isMnemonicValid = (out[0] >> 28) == (perm[11] & 0x0f); }
+        if (WORD_COUNT == 12) { isMnemonicValid = (out[0] >> 28) == (perm[permIndex] & 0x0f); }
+        if (WORD_COUNT == 15) { isMnemonicValid = (out[0] >> 27) == (perm[permIndex] & 0x1f); }
+        if (WORD_COUNT == 18) { isMnemonicValid = (out[0] >> 26) == (perm[permIndex] & 0x3f); }
         if (WORD_COUNT == 24) { isMnemonicValid = (out[0] >> 24) == byte32; }
         if (isMnemonicValid) {
             buf[curItem] = index;
