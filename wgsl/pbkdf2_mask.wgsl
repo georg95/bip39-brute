@@ -1183,18 +1183,33 @@ fn getBIP39Byte(idx: u32) -> u32 {
 const MASK = MASK__;
 const MASKLEN = MASKLEN__;
 
-fn permutation(N: u32) -> array<u32, WORD_COUNT> {
+struct u64 { hi: u32, lo: u32 };
+fn div64(x: u64, y: u32) -> u64 {
+    var rem = x.hi % y;
+    var quot_lo = 0u;
+    for (var i = 32u; i > 0u; i -= 1u) {
+        rem = (rem << 1) | ((x.lo >> (i - 1u)) & 1u);
+        if (rem >= y) {
+            rem -= y;
+            quot_lo |= (1u << (i - 1u));
+        }
+    }
+    return u64(x.hi / y, quot_lo);
+}
+fn rem64(x: u64, y: u32) -> u32 { return (((x.hi % y) * ((0xffffffff) % y + 1)) % y + x.lo % y) % y; }
+
+fn permutation(N: u64) -> array<u32, WORD_COUNT> {
     var perm: array<u32, WORD_COUNT>;
     var curOff = 0u;
     var n = N;
     for (var i = 0; i < WORD_COUNT; i++) {
         if (MASKLEN[i] == 2048) {
-            perm[WORD_COUNT - 1 - i] = n % 2048;
+            perm[WORD_COUNT - 1 - i] = rem64(n, 2048);
         } else {
-            perm[WORD_COUNT - 1 - i] = MASK[curOff + n % MASKLEN[i]];
+            perm[WORD_COUNT - 1 - i] = MASK[curOff + rem64(n, MASKLEN[i])];
             curOff += MASKLEN[i];
         }
-        n = n / MASKLEN[i];
+        n = div64(n, MASKLEN[i]);
     }
     return perm;
 }
@@ -1206,7 +1221,7 @@ fn setSeed(res: ptr<function, array<u32, 32>>, N: u32) {
       0x510e527f, 0xade682d1, 0x9b05688c, 0x2b3e6c1f,
       0x1f83d9ab, 0xfb41bd6b, 0x5be0cd19, 0x137e2179,
   );
-  let perm = permutation(N);
+  let perm = permutation(u64(input.offsetHi, N));
   for (var i = 0; i < 32; i++) { res[i] = 0; }
   var curOffset = 0u;
   var fullBlocks = 0u;
@@ -1278,7 +1293,8 @@ fn initBuffer(tmp_buf: ptr<function, array<u32, 32>>, seed1: ptr<function, array
 
 struct SeedIndexes {
     counter: u32,
-    curOffset: u32,
+    offsetHi: u32,
+    curOffsetLo: u32,
     indices: array<u32>,
 };
 
@@ -1291,7 +1307,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   var seed1: array<u32, 16>;
   var seed2: array<u32, 16>;
   var dk: array<u32, 16>;
-  initSeeds(&tmp_buf, &seed1, &seed2, input.indices[input.curOffset + gid.x]);
+  initSeeds(&tmp_buf, &seed1, &seed2, input.indices[input.curOffsetLo + gid.x]);
   initBuffer(&tmp_buf, &seed1, &seed2);
 
   for (var i = 0; i < 16; i += 1) { dk[i] = tmp_buf[i]; }

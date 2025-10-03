@@ -24,7 +24,7 @@ Password: gauffers (usernames.txt password list)
 - [x] Solana wallets
 - [x] Multiple derivation addresses
 - [x] 12/15/18/24 words support
-- [ ] More than 4 billion permutation support
+- [x] More than 4 billion permutation support
 - [ ] Optimize performance
 - [ ] Better UI/UX
 - [ ] Readme docs and examples

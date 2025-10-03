@@ -108,9 +108,12 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
             if (seedsGenerated >= permCount) {
               return { ended: true, found: null }
             }
-            device.queue.writeBuffer(buffers.seeds, 0, new Uint32Array([0, seedsGenerated]))
-            const seedsToGeneate = Math.min(permCount - seedsGenerated, SEED_GEN)
+            //                                                    counter, offsetHi, offsetLo
+            device.queue.writeBuffer(buffers.seeds, 0, new Uint32Array([0, Math.floor(seedsGenerated / 0x100000000), seedsGenerated % 0x100000000]))
+            const seedsToGeneate = Math.min(0x100000000 - seedsGenerated % 0x100000000, permCount - seedsGenerated, SEED_GEN)
+            assert(Math.floor(seedsGenerated / 0x100000000) === Math.floor((seedsGenerated + seedsToGeneate - 1) / 0x100000000), 'should generate seeds only inside chunk')
             seedsGenerated += seedsToGeneate
+            console.log('seedsGenerated:', seedsGenerated)
             const commandEncoder = device.createCommandEncoder()
             const passEncoder = commandEncoder.beginComputePass()
             passEncoder.setBindGroup(0, validSeedsShader.binding)
@@ -120,13 +123,9 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
             const result = await readGpuBuffer(buffers.seeds, 0, 1024, commandEncoder)
             curSeedsBatch = 0
             seedsBatchAmount = result[0]
-            console.log('seeds:', seedsBatchAmount)
-            // for (let i = 2; i < 10; i++) {
-            //   const mask = '* * moon flag weapon shed cushion vacant write distance neck glimpse come cricket congress clarify kid bunker clean minor ivory beach grunt cabin'
-            //   console.log(result[i], permutations(mask).perm(result[i]).map(x => biplist[x]).join(' '))
-            // }
         }
-        device.queue.writeBuffer(buffers.seeds, 0, new Uint32Array([0, curSeedsBatch]))
+        //                                                    counter, offsetHi, curOffsetLo
+        device.queue.writeBuffer(buffers.seeds, 0, new Uint32Array([0, Math.floor(seedsGenerated / 0x100000000), curSeedsBatch]))
         curSeedsBatch += count
         const commandEncoder = device.createCommandEncoder()
         const passEncoder = commandEncoder.beginComputePass()
@@ -140,8 +139,9 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
         passEncoder.end()
         const result = await readGpuBuffer(shadersLine[shadersLine.length - 1].bufferOut, 0, 1024, commandEncoder)
         if (result[0] !== 0xffffffff) {
-          const seedOffset = result[0] + 2 + (curSeedsBatch - count)
-          return { ended: true, found: (await readGpuBuffer(buffers.seeds, seedOffset, 1))[0] }
+          const seedOffset = result[0] + 3 + (curSeedsBatch - count)
+          const hi = Math.floor((seedsGenerated - 1) / 0x100000000) * 0x100000000
+          return { ended: true, found: (await readGpuBuffer(buffers.seeds, seedOffset, 1))[0] + hi }
         }
         const progressPerBatch = SEED_GEN / permCount
         const batchProgress = progressPerBatch * Math.min(1, curSeedsBatch / seedsBatchAmount)
@@ -1007,7 +1007,7 @@ function permutations(mask) {
           selected[MASKLEN.length - 1 - i] = MASK[curOff + N % MASKLEN[i]];
           curOff += MASKLEN[i]
         }
-        N = (N / MASKLEN[i]) | 0;
+        N = Math.floor(N / MASKLEN[i]);
       }
       return selected;
     }

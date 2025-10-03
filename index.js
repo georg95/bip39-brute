@@ -183,8 +183,8 @@ async function validateInput() {
     }
   }
   const { permCount } = permutations(words.join(' '))
-  if (permCount > 2 ** 32) {
-    window.output.innerHTML += `Can't brute more than 4 billion variants\n`
+  if (permCount > 2 ** 40) {
+    window.output.innerHTML += `Can't brute more than 2^40 variants\n`
     result = false
   }
   const addrlist = window.addrlist.value.split('\n').map(x => x.trim()).filter(x => x)
