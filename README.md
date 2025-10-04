@@ -51,4 +51,5 @@ Password: gauffers (usernames.txt password list)
 - [ ] Readme docs and examples
 - [ ] Shaders compilation progress
 - [ ] Save current settings & progess
+- [ ] Better benchmarks
 - [ ] Optimize performance
