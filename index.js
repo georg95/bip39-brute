@@ -73,15 +73,15 @@ async function brutePasswordGPU({ bip39mask, hashList, addrType }) {
     const ADDR_COUNT = DERIVE_ADDRESSES
     const WORKGROUP_SIZE = 64
     const {
-      name,
+      name: gpuName,
       clean,
       inference,
       setEccTable,
       prepareShaderPipeline,
     } = await webGPUinit({ BUF_SIZE: batchSize*128*ADDR_COUNT })
-    log(`[${name}]\nBruteforce init...`, true)
+    log(`[${gpuName}]\nBruteforce init...`, true)
     await setEccTable(addrType === 'solana' ? 'ed25519' : 'secp256k1')
-    const PASSWORD_LISTS = [
+    const PASSWORD_LISTS = PASSWORD_SOURCE === 'default' ? [
       { url: 'forced-browsing/all.txt', filePasswords: 43135 },
       { url: 'usernames.txt', filePasswords: 403335 },
       { url: '1000000-password-seclists.txt', filePasswords: 1000000 },
@@ -94,7 +94,7 @@ async function brutePasswordGPU({ bip39mask, hashList, addrType }) {
       { url: '7-more-passwords.txt', filePasswords: 528136 },
       { url: '8-more-passwords.txt', filePasswords: 61682 },
       { url: 'facebook-firstnames.txt', filePasswords: 4347667 },
-    ]
+    ] : PASSWORD_FILES
     // PASSWORD_LISTS.sort((a, b) => a.filePasswords - b.filePasswords)
     const pipeline = await prepareShaderPipeline({
         addrType,
@@ -114,12 +114,11 @@ async function brutePasswordGPU({ bip39mask, hashList, addrType }) {
           nextBatch = await getPasswords(PASSWORD_LISTS[curList++])
           continue
         }
-        
         const start = performance.now()
         out = await inference({ shaders: pipeline, inp: new Uint32Array(inp.passwords), count: batchSize })
         const time = (performance.now() - start) / 1000
         const speed = batchSize / time | 0
-        log(`[${name}]\n${inp.url} (${curList}/${PASSWORD_LISTS.length}) ${inp.progress.toFixed(1).padStart(4, '')}% ${speed} passwords/s`, true)
+        log(`[${gpuName}]\n${inp.name} (${curList}/${PASSWORD_LISTS.length}) ${inp.progress.toFixed(1).padStart(4, '')}% ${speed} passwords/s`, true)
         if (out[0] !== 0xffffffff) {
             const mnemoIndex = out[0] / ADDR_COUNT | 0
             const passBuf = new Uint8Array(inp.passwords)
@@ -181,6 +180,91 @@ async function bruteSeedGPU({ bip39mask, hashList, addrType }) {
   clean()
 }
 
+async function getPasswords(file) {
+  let reader = null
+  if (file.url) {
+    const resp = await fetch(`https://duyet.github.io/bruteforce-database/${url}`)
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    reader = resp.body.getReader()
+  } else {
+    reader = file.stream().getReader()
+  }
+  
+  let partialBuf = new Uint8Array(0)
+  let ended = false
+  let processedPasswords = 0
+  let processedBytes = 0
+
+  async function batch(passwordsCount) {
+    if (ended) return null
+    const offsets = new Uint32Array(passwordsCount)
+    const chunks = []
+    let totalLen = 0
+    let count = 0
+    const PASSW_OFFSET = 128 + passwordsCount*4
+
+    while (count < passwordsCount && !ended) {
+      let newlinePos
+      while (
+        count < passwordsCount &&
+        (newlinePos = partialBuf.indexOf(10)) !== -1
+      ) {
+        let pwd = partialBuf.subarray(0, newlinePos + 1)
+        if (pwd[pwd.length - 2] === 0x0D) { // \r\n
+          pwd = partialBuf.subarray(0, newlinePos)
+          pwd[pwd.length - 1] = 10
+        }
+        offsets[count] = totalLen + PASSW_OFFSET
+        chunks.push(pwd)
+        totalLen += pwd.length
+        count++
+        partialBuf = partialBuf.subarray(newlinePos + 1)
+      }
+
+      if (count < passwordsCount && !ended) {
+        const { done, value } = await reader.read()
+        if (done) {
+          ended = true
+          if (partialBuf.length > 0 && count < passwordsCount) {
+            offsets[count] = totalLen + PASSW_OFFSET
+            chunks.push(partialBuf)
+            totalLen += partialBuf.length
+            count++
+            partialBuf = new Uint8Array(0)
+          }
+          break
+        } else {
+          const buf = new Uint8Array(partialBuf.length + value.length)
+          buf.set(partialBuf, 0)
+          buf.set(value, partialBuf.length)
+          partialBuf = buf
+        }
+      }
+    }
+
+    if (count === 0) return null
+
+    let bufLen = 128 + offsets.byteLength + totalLen
+    bufLen += 4 - bufLen % 4
+    const flat = new Uint8Array(bufLen)
+    var strbuf = new Uint8Array(offsets.buffer, offsets.byteOffset, offsets.byteLength)
+    flat.set(strbuf, 128)
+    let off = PASSW_OFFSET
+    for (const c of chunks) {
+      flat.set(c, off)
+      off += c.length
+      processedBytes += c.length
+    }
+    processedPasswords += count
+    let progress = processedBytes / file.size * 100
+    if (file.filePasswords) {
+      progress = processedPasswords / filePasswords * 100
+    }
+    return { name: file.name || file.url, passwords: flat.buffer, progress };
+  }
+
+  return batch;
+}
 
 async function validateInput() {
   var output = ''
