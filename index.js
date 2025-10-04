@@ -183,7 +183,7 @@ async function bruteSeedGPU({ bip39mask, hashList, addrType }) {
 async function getPasswords(file) {
   let reader = null
   if (file.url) {
-    const resp = await fetch(`https://duyet.github.io/bruteforce-database/${url}`)
+    const resp = await fetch(`https://duyet.github.io/bruteforce-database/${file.url}`)
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
     reader = resp.body.getReader()
   } else {
@@ -258,7 +258,7 @@ async function getPasswords(file) {
     processedPasswords += count
     let progress = processedBytes / file.size * 100
     if (file.filePasswords) {
-      progress = processedPasswords / filePasswords * 100
+      progress = processedPasswords / file.filePasswords * 100
     }
     return { name: file.name || file.url, passwords: flat.buffer, progress };
   }
