@@ -1,9 +1,9 @@
 let DERIVE_ADDRESSES = 1
 document.addEventListener('DOMContentLoaded', () => {
   window.brute.onclick = async () => {
-    const { mode, bip39mask, addrHash160list, addrTypes } = await validateInput()
+    const { permCount, bip39mask, addrHash160list, addrTypes } = await validateInput()
 
-    if (mode === 'mask') {
+    if (permCount > 1) {
       bruteSeedGPU({ bip39mask, hashList: addrHash160list, addrType: addrTypes[0] })
     } else {
       brutePasswordGPU({ bip39mask, hashList: addrHash160list, addrType: addrTypes[0] })
@@ -164,32 +164,36 @@ async function bruteSeedGPU({ bip39mask, hashList, addrType }) {
 
 
 async function validateInput() {
-  window.output.innerHTML = ''
+  var output = ''
   const bip39mask = window.bipmask.value
   let result = true
   const words = bip39mask.trim().split(/[\s \t]+/)
   if (![12, 15, 18, 24].includes(words.length)) {
-      window.output.innerHTML += `Expected 12/15/18/24 words, got ${words.length}\n`
+      output += `Expected 12/15/18/24 words, got ${words.length}\n`
       result = false
   }
   let asterisks = 0
   for (let word of words) {
     if (word === '*') { asterisks++; continue }
     for (let wordPart of word.split(',')) {
-      if (!biplist.includes(wordPart)) {
-        window.output.innerHTML += `${wordPart} is invalid bip39 word\n`
+      if (wordPart.indexOf('?') === -1 && wordPart.indexOf('*') === -1 && !biplist.includes(wordPart)) {
+        output += `${wordPart} is invalid bip39 word\n`
         result = false
       }
     }
   }
-  const { permCount } = permutations(words.join(' '))
+  const { permCount, error: maskError } = permutations(words.join(' '))
+  if (maskError) {
+    output += maskError + '\n'
+    result = false
+  }
   if (permCount > 2 ** 40) {
-    window.output.innerHTML += `Can't brute more than 2^40 variants\n`
+    output += `Can't brute more than 2^40 variants\n`
     result = false
   }
   const addrlist = window.addrlist.value.split('\n').map(x => x.trim()).filter(x => x)
   if (addrlist.length === 0) {
-    window.output.innerHTML = `Enter at least 1 address\n`;
+    output = `Enter at least 1 address\n`;
     result = false
   }
   const addrHash160list = []
@@ -200,17 +204,23 @@ async function validateInput() {
       addrTypes.add(type)
       addrHash160list.push(hash160)
     } else {
-      window.output.innerHTML += `${addr} is invalid address\n`
+      output += `${addr} is invalid address\n`
       result = false
     }
   }
   addrTypes = Array.from(addrTypes)
   if (addrTypes.length > 1) {
-    window.output.innerHTML += `WARNING! Multiple address types: ${addrTypes.join(', ')}\nOnly ${addrTypes[0]} will be used\n`;
+    output += `WARNING! Multiple address types: ${addrTypes.join(', ')}\nOnly ${addrTypes[0]} will be used\n`;
   }
   const mode = permCount > 1 ? 'mask' : 'password'
-  log(`\nMode:    ${mode}\nAddress: ${addrTypes[0]}\nDerived: ${DERIVE_ADDRESSES}`)
-  return result && { mode: permCount > 1 ? 'mask' : 'password', bip39mask: words.join(' '), addrHash160list, addrTypes }
+  output += ('\n' + [
+    `Mode:     ${mode}`,
+    `Address:  ${addrTypes[0]}`,
+    `Derived:  ${DERIVE_ADDRESSES}`, permCount > 1 &&
+    `Variants: ${permCount < 10_000_000 ? `${permCount / 1000 | 0} thousands` : `${permCount / 1_000_000 | 0} million`}`,
+  ].filter(x => x).join('\n'))
+  window.output.innerHTML = output
+  return result && { bip39mask: words.join(' '), permCount, addrHash160list, addrTypes }
 }
 
 async function addrToScriptHash(address) {

@@ -45,7 +45,7 @@ Password: gauffers (usernames.txt password list)
 - [x] Multiple derivation addresses
 - [x] 12/15/18/24 words support
 - [x] More than 4 billion permutation support
-- [ ] Partial word masks
+- [x] Partial word masks
 - [ ] Read passwords from file
 - [ ] Passphrase for mask recovery mode
 - [ ] Links for recovery state

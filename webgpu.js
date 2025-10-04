@@ -981,10 +981,23 @@ async function sha512round(mnemo, XOR) {
 }
 
 function permutations(mask) {
-  let tokens = mask.split(" "), MASK = [], MASKLEN = []
+  let tokens = mask.split(" "), MASK = [], MASKLEN = [], error = null
   tokens.map(token => {
     if (token === "*") { MASKLEN = [2048].concat(MASKLEN); return }
-    const indexes = token.split(",").map(token => biplist.indexOf(token))
+    const indexes = []
+    token.split(",").forEach(token => {
+      if (token.indexOf('?') !== -1 || token.indexOf('*') !== -1) {
+        const regex = new RegExp('^' + token.replaceAll('?', '.').replaceAll('*', '.*') + '$')
+        biplist.forEach((word, i) => {
+          if(word.match(regex)) { indexes.push(i) }
+        })
+      } else {
+        indexes.push(biplist.indexOf(token))
+      }
+    })
+    if (indexes.length === 0) {
+      error = `Nothing matches this mask: ${token}`
+    }
     MASKLEN.unshift(indexes.length)
     MASK = indexes.concat(MASK)
   })
@@ -993,6 +1006,7 @@ function permutations(mask) {
   if (tokens.length === 18) { seedsPerValid = 64 }
   if (tokens.length === 15) { seedsPerValid = 32 }
   return {
+    error,
     MASK,
     MASKLEN,
     seedsPerValid,
