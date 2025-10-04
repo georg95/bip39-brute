@@ -30,7 +30,7 @@
             min-height: 80px;
             box-sizing: border-box;
         }
-        button {
+        button, select, option {
             background-color: #222;
             color: bisque;
         }
@@ -54,14 +54,45 @@
             display: flex;
             justify-content: space-between;
         }
+        textarea, select, option {
+            border: 1px solid bisque;
+            padding: 6px;
+        }
+        textarea {
+            display: block;
+        }
+        select {
+            margin-top: 20px;
+        }
+        #passwords_files {
+            display: none;
+        }
+        #passwords_files_view {
+            display: none;
+            white-space: pre-wrap;
+            border: 1px solid bisque;
+            margin-top: 20px;
+            padding: 20px 40px;
+            cursor: pointer;
+        }
     </style>
 <body>
     <header id="brute-pane">
         <h1 class="top-header">Mnemonic<button id="show-settings">⚙️</button></h1>
-        <!--        slab between length about you flower switch celery gap trade warrior wrestle cycle elephant gravity wealth globe various sick uncover despair decade depth open -->
-        <textarea id="bipmask" spellcheck="false">slab between * a*u? * flower switch celery gap trade warrior wrestle cycle elephant gravity wealth globe various sick uncover despair decade depth open</textarea>
+        <!-- slab between length about you flower switch celery gap trade warrior wrestle cycle elephant gravity wealth globe various sick uncover despair decade depth open -->
+        <!-- 5236clavinova -->
+        <textarea id="bipmask" spellcheck="false">slab between length about you flower switch celery gap trade warrior wrestle cycle elephant gravity wealth globe various sick uncover despair decade depth open</textarea>
         <h1>Known address list</h1>
-        <textarea id="addrlist" spellcheck="false">1PmxCnnxg5hKFbM55YLVRTSj2uGtc4YRXY</textarea>
+        <textarea id="addrlist" spellcheck="false">1DgGHymofM38uYRuLGGJrnptB2gGpxxn7o</textarea>
+        
+        <select name="passwords-source" id="passwords_source">
+            <option name="default">Default passwords dictionary</option>
+            <option name="file">Select passwords file(s)</option>
+        </select>
+        <label id="passwords_files_view" for="passwords_files">
+            Select password list file(s)
+        </label>
+        <input type="file" id="passwords_files" accept=".txt" multiple></input>
         <button id="brute">Brute</button>
         <pre id="output"></pre>
     </header>

@@ -48,10 +48,10 @@ Password: gauffers (usernames.txt password list)
 - [x] Partial word masks
 - [ ] Read passwords from file
 - [ ] Passphrase for mask recovery mode
-- [ ] Links for recovery state
-- [ ] Readme docs and examples
 - [ ] Shaders compilation progress
 - [ ] Save current settings & progess
+- [ ] Links for recovery state
+- [ ] Readme docs and examples
 - [ ] Better benchmarks
 - [ ] Naming project
 - [ ] Optimize performance

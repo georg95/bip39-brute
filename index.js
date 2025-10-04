@@ -1,4 +1,6 @@
 let DERIVE_ADDRESSES = 1
+let PASSWORD_SOURCE = 'default'
+let PASSWORD_FILES = []
 document.addEventListener('DOMContentLoaded', () => {
   window.brute.onclick = async () => {
     const { permCount, bip39mask, addrHash160list, addrTypes } = await validateInput()
@@ -8,6 +10,24 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       brutePasswordGPU({ bip39mask, hashList: addrHash160list, addrType: addrTypes[0] })
     }
+  }
+  window.passwords_source.onchange = (e) => {
+    PASSWORD_SOURCE = e.target.options[e.target.selectedIndex].getAttribute('name')
+    window.passwords_files_view.style.display = PASSWORD_SOURCE === 'file' ? 'block' : 'none'
+  }
+  window.passwords_files.onchange = (e) => {
+    if (e.target.files.length === 0) {
+      return
+    }
+    PASSWORD_FILES = Array.from(e.target.files)
+    console.log('file change', PASSWORD_FILES)
+    function formatSize({ size }) {
+      if (size > 1024 * 1024 * 1024) { return `${(size/1024/1024/1024).toFixed(1)} Gb` }
+      if (size > 1024 * 1024) { return `${(size/1024/1024).toFixed(1)} Mb` }
+      return `${(size/1024).toFixed(1)} kb`
+    }
+    const maxLen = Math.max.apply(Math, PASSWORD_FILES.map(f => f.name.length))
+    window.passwords_files_view.innerText = PASSWORD_FILES.map(f => `${f.name.padEnd(maxLen, ' ')} ${formatSize(f)}`).join('\n')
   }
   window['show-settings'].onclick = () => {
     window['brute-pane'].style.display = 'none'
@@ -27,7 +47,15 @@ document.addEventListener('DOMContentLoaded', () => {
   window.deriveView.innerText = DERIVE_ADDRESSES
 
   async function checkInput() {
-    window.brute.style.visibility = await validateInput() ? 'visible' : 'hidden'
+    const res = await validateInput()
+    window.brute.style.visibility = res ? 'visible' : 'hidden'
+    if (res && res.permCount === 1) {
+      window.passwords_source.style.display = 'inline-block'
+      window.passwords_files_view.style.display = PASSWORD_SOURCE === 'file' ? 'block' : 'none'
+    } else {
+      window.passwords_source.style.display = 'none'
+      window.passwords_files_view.style.display = 'none'
+    }
   }
   window.bipmask.onchange = checkInput
   window.bipmask.oninput = checkInput
@@ -75,32 +103,23 @@ async function brutePasswordGPU({ bip39mask, hashList, addrType }) {
         WORKGROUP_SIZE,
         hashList,
     })
-    let curList = 0
-    let listName = PASSWORD_LISTS[curList].url
-    let filePasswords = PASSWORD_LISTS[curList++].filePasswords
-    let nextBatch = await getPasswords(`https://duyet.github.io/bruteforce-database/${listName}`)
-    let processedPasswords = 0
+    let curList = 0, nextBatch = null;
     while (!stopped) {
-        const inp = await nextBatch(batchSize)
-        if (!inp && curList < PASSWORD_LISTS.length) {
-          listName = PASSWORD_LISTS[curList].url
-          filePasswords = PASSWORD_LISTS[curList++].filePasswords
-          nextBatch = await getPasswords(`https://duyet.github.io/bruteforce-database/${listName}`)
-          processedPasswords = 0
+        const inp = nextBatch && (await nextBatch(batchSize))
+        if (!inp) {
+          if (curList >= PASSWORD_LISTS.length) {
+            log(`Password not found :(`, true)
+            break
+          }
+          nextBatch = await getPasswords(PASSWORD_LISTS[curList++])
           continue
-        }
-        if (!inp && curList >= PASSWORD_LISTS.length) {
-          log(`Password not found :(`, true)
-          break
         }
         
         const start = performance.now()
         out = await inference({ shaders: pipeline, inp: new Uint32Array(inp.passwords), count: batchSize })
         const time = (performance.now() - start) / 1000
         const speed = batchSize / time | 0
-        processedPasswords += inp.count
-        const progress = (processedPasswords / filePasswords * 100).toFixed(1).padStart(4, '')
-        log(`[${name}]\n${listName} (${curList}/${PASSWORD_LISTS.length}) ${progress}% ${speed} passwords/s`, true)
+        log(`[${name}]\n${inp.url} (${curList}/${PASSWORD_LISTS.length}) ${inp.progress.toFixed(1).padStart(4, '')}% ${speed} passwords/s`, true)
         if (out[0] !== 0xffffffff) {
             const mnemoIndex = out[0] / ADDR_COUNT | 0
             const passBuf = new Uint8Array(inp.passwords)

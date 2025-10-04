@@ -483,12 +483,13 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
 // ====================================== helper methods
 
 
-async function getPasswords(url) {
-  const resp = await fetch(url)
+async function getPasswords({ url, filePasswords }) {
+  const resp = await fetch(`https://duyet.github.io/bruteforce-database/${url}`)
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
   const reader = resp.body.getReader()
   let partialBuf = new Uint8Array(0)
   let ended = false
+  let processedPasswords = 0
 
   async function batch(passwordsCount) {
     if (ended) return null
@@ -545,7 +546,8 @@ async function getPasswords(url) {
       flat.set(c, off)
       off += c.length
     }
-    return { passwords: flat.buffer, count };
+    processedPasswords += count
+    return { url, passwords: flat.buffer, progress: processedPasswords / filePasswords * 100 };
   }
 
   return batch;
