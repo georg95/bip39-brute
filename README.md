@@ -15,6 +15,26 @@ Test data, address list (m/44'/0'/0'/0/0, m/44'/0'/0'/0/1):
 ```
 Password: gauffers (usernames.txt password list)
 
+### Supported addresses:
+
+- [x] Bitcoin legacy (p2pkh) m/44'/0'/0'/0/x
+- [x] Bitcoin segwit (p2wphk) m/84'/0'/0'/0/x
+- [x] Bitcoin script (p2sh) m/49'/0'/0'/0/x
+- [x] Ethereum, BSC, Arbitrum, Poligon, Optimism m/44'/60'/0'/0/x
+- [x] Tron m/44'/195'/0'/0/x
+- [x] Solana m/44'/501'/0'/x'
+
+### To support:
+
+- [ ] Ripple
+- [ ] Dogecoin
+- [ ] Litecoin
+- [ ] Cardano
+- [ ] Bitcoin electrum
+- [ ] Bitcoin core/multibit
+- [ ] Solana 2 m/44'/501'/x'
+- [ ] Solana legacy m/44'/501'/0'/0/x
+
 ### TODO:
 
 - [x] Password bruteforce mode
@@ -25,6 +45,10 @@ Password: gauffers (usernames.txt password list)
 - [x] Multiple derivation addresses
 - [x] 12/15/18/24 words support
 - [x] More than 4 billion permutation support
-- [ ] Optimize performance
-- [ ] Better UI/UX
+- [ ] Partial word masks
+- [ ] Read passwords from file
+- [ ] Links for recovery state
 - [ ] Readme docs and examples
+- [ ] Shaders compilation progress
+- [ ] Save current settings & progess
+- [ ] Optimize performance
