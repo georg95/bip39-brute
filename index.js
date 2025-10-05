@@ -12,7 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
     startBruteforce(savedProgress)
   }
   window.start_btn.onclick = () => startBruteforce()
-  window.stop_btn.onclick = stopCurrentBruteforce
+  window.stop_btn.onclick = () => { stopCurrentBruteforce(); validateInput(true) }
   function stopCurrentBruteforce() {
     window.pause_btn.style.display = 'none'
     window.stop_btn.style.display = 'none'
@@ -26,7 +26,6 @@ document.addEventListener('DOMContentLoaded', () => {
     window.bipmask.disabled = false
     window.addrlist.disabled = false
     pausedBruteforce = false
-    validateInput(true)
   }
   function showPausedBruteforce() {
     window.pause_btn.style.display = 'none'
