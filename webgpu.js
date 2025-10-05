@@ -154,28 +154,25 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
       mode: null,
     };
 
-    async function prepareShaderPipeline({ addrType, mode, addrCount, MNEMONIC, MNEMONIC_PASSWORD, WORKGROUP_SIZE, hashList }) {
-        assert(addrType && ADDRTYPEMAP[addrType] && MNEMONIC && WORKGROUP_SIZE && hashList)
+    async function prepareShaderPipeline({ progress, addrType, mode, addrCount, MNEMONIC, MNEMONIC_PASSWORD, WORKGROUP_SIZE, hashList }) {
+        assert(addrType && ADDRTYPEMAP[addrType] && MNEMONIC && WORKGROUP_SIZE && hashList, progress)
         const [NETWORK, COIN_TYPE] = ADDRTYPEMAP[addrType]
         shaders.pipeline = []
         shaders.mode = mode
         if (mode === 'mask') {
-          console.time('[COMPILE] valid seeds generator');
+          progress('valid seeds generator');
           await initValidSeedsShader(MNEMONIC, WORKGROUP_SIZE)
-          console.timeEnd('[COMPILE] valid seeds generator');
-          console.time('[COMPILE] pbkdf2');
+          progress('pbkdf2');
           shaders.pipeline.push(await Pbkdf2MaskShader(MNEMONIC, MNEMONIC_PASSWORD, WORKGROUP_SIZE))
-          console.timeEnd('[COMPILE] pbkdf2');
           swapBuffers()
         } else {
-          console.time('[COMPILE] pbkdf2');
+          progress('pbkdf2');
           let pbkdf2Code = (await fetch('wgsl/pbkdf2_template.wgsl').then(r => r.text()))
           pbkdf2Code = (await unrolledSha512_wgpu(pbkdf2Code, MNEMONIC))
               .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
           // unrolled code
           // console.log(pbkdf2Code)
           shaders.pipeline.push(await buildShader(pbkdf2Code, 'main', WORKGROUP_SIZE))
-          console.timeEnd('[COMPILE] pbkdf2');
           swapBuffers()
         }
 
@@ -184,9 +181,8 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
             .replaceAll('NETWORK', NETWORK)
             .replaceAll('COIN_TYPE', COIN_TYPE)
             .replaceAll('ADDR_COUNT', `${addrCount}u`)
-        console.time('[COMPILE] deriveCoin');
+        progress('deriveCoin');
         shaders.pipeline.push(await buildShader(deriveCode, addrType === 'solana' ? 'deriveSolana' : 'deriveCoin', WORKGROUP_SIZE))
-        console.timeEnd('[COMPILE] deriveCoin');
         swapBuffers()
 
         if (addrType === 'solana') {
@@ -194,23 +190,21 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
               .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
               .replaceAll('CHECK_COUNT', hashList.length.toString(10))
               .replaceAll('CHECK_KEYS', solanaPkListToWGSLArray(hashList))
-            console.time('[COMPILE] ed25519');
+            progress('ed25519');
             shaders.pipeline.push(await buildShader(ed25519Code, 'main', WORKGROUP_SIZE / addrCount, 'ed25519'))
-            console.timeEnd('[COMPILE] ed25519');
             swapBuffers()
+            progress()
             return
         }
 
         let secp256k1Code = (await fetch('wgsl/secp256k1.wgsl').then(r => r.text())).replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
-        console.time('[COMPILE] secp256k1');
+        progress('secp256k1');
         const secp256k1Shader = await buildShader(secp256k1Code, 'main', WORKGROUP_SIZE, 'secp256k1')
-        console.timeEnd('[COMPILE] secp256k1');
         shaders.pipeline.push(secp256k1Shader)
         swapBuffers()
-        console.time('[COMPILE] deriveChange/deriveAddr');
+        progress('deriveChange/deriveAddr');
         const deriveChangeShader = await buildShader(deriveCode, 'deriveChange', WORKGROUP_SIZE)
         const deriveAddrShader = await buildShader(deriveCode, 'deriveAddr', WORKGROUP_SIZE)
-        console.timeEnd('[COMPILE] deriveChange/deriveAddr');
         shaders.pipeline.push(deriveChangeShader)
         swapBuffers()
         shaders.pipeline.push(secp256k1Shader)
@@ -220,8 +214,7 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
         shaders.pipeline.push({ ...secp256k1Shader, workPerWarp: WORKGROUP_SIZE / addrCount })
         swapBuffers()
 
-        console.time(`[COMPILE] ${addrType === 'eth' || addrType === 'tron' ? 'keccak' : 'hash160'}`);
-        console.log('hashList:', hashList)
+        progress(addrType === 'eth' || addrType === 'tron' ? 'keccak' : 'hash160');
         if (addrType === 'eth' || addrType === 'tron') {
           let keccakCode = (await fetch('wgsl/keccak256.wgsl').then(r => r.text()))
             .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
@@ -241,8 +234,7 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
             .replaceAll('CHECK_HASHES', hash160ToWGSLArray(hashList))
           shaders.pipeline.push(await buildShader(hash160Code, 'main', WORKGROUP_SIZE / addrCount))
         }
-        console.timeEnd(`[COMPILE] ${addrType === 'eth' || addrType === 'tron'? 'keccak' : 'hash160'}`)
-
+        progress()
         return shaders.pipeline
     }
 

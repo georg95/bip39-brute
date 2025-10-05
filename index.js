@@ -68,6 +68,15 @@ document.addEventListener('DOMContentLoaded', () => {
   checkInput()
 })
 
+function logCompilationProgress() {
+  let prevProgress = null
+  return (shaderName) => {
+    if (prevProgress) { window.output.innerHTML += ` [${((Date.now() - prevProgress)/1000).toFixed(1)}s]\n` }
+    prevProgress = Date.now()
+    if (shaderName) { window.output.innerHTML += `Compile shader: ${shaderName}...` }
+  }
+}
+
 async function brutePasswordGPU({ bip39mask, hashList, addrType }) {
     let stopped = false
     window.brute.onclick = () => { stopped = true }
@@ -100,7 +109,8 @@ async function brutePasswordGPU({ bip39mask, hashList, addrType }) {
       { url: 'facebook-firstnames.txt', filePasswords: 4347667 },
     ] : PASSWORD_FILES
     // PASSWORD_LISTS.sort((a, b) => a.filePasswords - b.filePasswords)
-    const pipeline = await prepareShaderPipeline({
+    await prepareShaderPipeline({
+        progress: logCompilationProgress(),
         addrType,
         addrCount: ADDR_COUNT,
         MNEMONIC: bip39mask,
@@ -119,7 +129,7 @@ async function brutePasswordGPU({ bip39mask, hashList, addrType }) {
           continue
         }
         const start = performance.now()
-        out = await inference({ shaders: pipeline, inp: new Uint32Array(inp.passwords), count: batchSize })
+        out = await inference({ inp: new Uint32Array(inp.passwords), count: batchSize })
         const time = (performance.now() - start) / 1000
         const speed = batchSize / time | 0
         log(`[${gpuName}]\n${inp.name} (${curList}/${PASSWORD_LISTS.length}) ${inp.progress.toFixed(1).padStart(4, '')}% ${speed} passwords/s`, true)
@@ -157,6 +167,7 @@ async function bruteSeedGPU({ bip39mask, hashList, addrType }) {
   log(`[${name}]\nBruteforce init...`, true)
   await setEccTable(addrType === 'solana' ? 'ed25519' : 'secp256k1')
   await prepareShaderPipeline({
+    progress: logCompilationProgress(),
     mode: 'mask',
     addrType,
     addrCount: ADDR_COUNT,
