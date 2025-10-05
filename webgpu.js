@@ -32,7 +32,7 @@ function solanaPkListToWGSLArray(publicKeyList) {
     ).join(',\n')
 }
 
-async function webGPUinit({ BUF_SIZE, adapter, device }) {
+async function webGPUinit({ SAVED_PROGRESS, BUF_SIZE, adapter, device }) {
     assert(navigator.gpu, 'Browser not support WebGPU')
     assert(BUF_SIZE, 'no BUF_SIZE passed')
     if (!adapter && !device) {
@@ -99,7 +99,8 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
 
     let curSeedsBatch = 0
     let seedsBatchAmount = 0
-    let seedsGenerated = 0
+    let seedsGenerated = SAVED_PROGRESS || 0
+    let seedsChecked = SAVED_PROGRESS || 0
     async function inferenceMask({ count, permCount, seedsPerValid }) {
         assert(validSeedsShader, 'call initValidSeedsShader first')
         const SEED_GEN_MULTIPLIER = 3.9
@@ -112,6 +113,7 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
             device.queue.writeBuffer(buffers.seeds, 0, new Uint32Array([0, Math.floor(seedsGenerated / 0x100000000), seedsGenerated % 0x100000000]))
             const seedsToGeneate = Math.min(0x100000000 - seedsGenerated % 0x100000000, permCount - seedsGenerated, SEED_GEN)
             assert(Math.floor(seedsGenerated / 0x100000000) === Math.floor((seedsGenerated + seedsToGeneate - 1) / 0x100000000), 'should generate seeds only inside chunk')
+            seedsChecked = seedsGenerated
             seedsGenerated += seedsToGeneate
             console.log('seedsGenerated:', seedsGenerated)
             const commandEncoder = device.createCommandEncoder()
@@ -145,7 +147,7 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
         }
         const progressPerBatch = SEED_GEN / permCount
         const batchProgress = progressPerBatch * Math.min(1, curSeedsBatch / seedsBatchAmount)
-        return { ended: false, found: null, progress: (seedsGenerated - SEED_GEN)/permCount + batchProgress }
+        return { ended: false, found: null, progress: (seedsGenerated - SEED_GEN)/permCount + batchProgress, seedsChecked }
     }
 
     let validSeedsShader = null

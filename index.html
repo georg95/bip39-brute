@@ -36,10 +36,12 @@
         pre {
             text-wrap: auto;
         }
-        #brute {
+        #start_btn, #pause_btn, #resume_btn, #stop_btn {
             width: 100%;
             height: 40px;
             margin-top: 20px;
+            display: none;
+            cursor: pointer;
         }
         #settings-pane {
             display: none;
@@ -94,7 +96,10 @@
             Select password list file(s)
         </label>
         <input type="file" id="passwords_files" accept=".txt" multiple></input>
-        <button id="brute">Brute</button>
+        <button id="start_btn">▶️ Start</button>
+        <button id="pause_btn">⏸️ Pause</button>
+        <button id="resume_btn">▶️ Resume</button>
+        <button id="stop_btn">🛑 Stop</button>
         <pre id="output"></pre>
     </header>
     <header id="settings-pane">

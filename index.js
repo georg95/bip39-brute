@@ -3,25 +3,71 @@ let PASSWORD_SOURCE = 'default'
 let PASSWORD_FILES = []
 let MNEMONIC_PASSWORD = ''
 document.addEventListener('DOMContentLoaded', () => {
-  window.brute.onclick = async () => {
-    const { permCount, bip39mask, addrHash160list, addrTypes } = await validateInput()
+  let pausedBruteforce = !!Number(localStorage.getItem('seeds_checked'))
+  window.resume_btn.onclick = () => {
+    startBruteforce(Number(localStorage.getItem('seeds_checked')))
+  }
+  window.start_btn.onclick = () => startBruteforce()
+  window.stop_btn.onclick = stopCurrentBruteforce
+  function stopCurrentBruteforce() {
+    window.pause_btn.style.display = 'none'
+    window.stop_btn.style.display = 'none'
+    window.resume_btn.style.display = 'none'
+    window.start_btn.style.display = 'block'
+    localStorage.setItem('seeds_checked', 0)
+    window['show-settings'].style.display = ''
+    window.derive.disabled = false
+    window.mnemonic_password.disabled = false
+    window.bipmask.disabled = false
+    window.addrlist.disabled = false
+    pausedBruteforce = false
+    validateInput()
+  }
+  function showPausedBruteforce() {
+    window.pause_btn.style.display = 'none'
+    window.start_btn.style.display = 'none'
+    window.stop_btn.style.display = 'block'
+    window.resume_btn.style.display = 'block'
+    window['show-settings'].style.display = 'none'
+    window.derive.disabled = true
+    window.mnemonic_password.disabled = true
+    window.bipmask.disabled = true
+    window.addrlist.disabled = true
+    pausedBruteforce = true
+  }
+  async function startBruteforce(SAVED_PROGRESS) {
+    const { permCount, bip39mask, addrHash160list, addrTypes } = await validateInput(false)
 
+    window.start_btn.style.display = 'none'
+    window.resume_btn.style.display = 'none'
+    window.stop_btn.style.display = 'none'
+    window.pause_btn.style.display = 'block'
+    window['show-settings'].style.display = 'none'
+    window.derive.disabled = true
+    window.mnemonic_password.disabled = true
+    window.bipmask.disabled = true
+    window.addrlist.disabled = true
+    pausedBruteforce = true
+    let paused = false
     if (permCount > 1) {
-      bruteSeedGPU({ bip39mask, hashList: addrHash160list, addrType: addrTypes[0] })
+      paused = await bruteSeedGPU({ SAVED_PROGRESS, bip39mask, hashList: addrHash160list, addrType: addrTypes[0] })
     } else {
-      brutePasswordGPU({ bip39mask, hashList: addrHash160list, addrType: addrTypes[0] })
+      paused = await brutePasswordGPU({ SAVED_PROGRESS, bip39mask, hashList: addrHash160list, addrType: addrTypes[0] })
     }
+    if (paused) { showPausedBruteforce() }
+    else { stopCurrentBruteforce() }
   }
   window.passwords_source.onchange = (e) => {
     PASSWORD_SOURCE = e.target.options[e.target.selectedIndex].getAttribute('name')
     window.passwords_files_view.style.display = PASSWORD_SOURCE === 'file' ? 'block' : 'none'
+    localStorage.setItem('password_source', PASSWORD_SOURCE)
   }
   window.passwords_files.onchange = (e) => {
     if (e.target.files.length === 0) {
       return
     }
     PASSWORD_FILES = Array.from(e.target.files)
-    console.log('file change', PASSWORD_FILES)
+    localStorage.setItem('password_files', PASSWORD_FILES.map(f => f.name).join(','))
     function formatSize({ size }) {
       if (size > 1024 * 1024 * 1024) { return `${(size/1024/1024/1024).toFixed(1)} Gb` }
       if (size > 1024 * 1024) { return `${(size/1024/1024).toFixed(1)} Mb` }
@@ -41,18 +87,17 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   window.derive.oninput = () => {
     DERIVE_ADDRESSES = 2 ** Number(window.derive.value)
-    window.deriveView.innerText = Math.max(DERIVE_ADDRESSES, 1)
-    console.log('RAM:', 1024 * 32 * 128 * DERIVE_ADDRESSES / 1024 / 1024 | 0, 'Mb')
+    window.deriveView.innerText = DERIVE_ADDRESSES
+    localStorage.setItem('derive_addresses', DERIVE_ADDRESSES)
   }
-  window.derive.value = Math.log2(DERIVE_ADDRESSES)
-  window.deriveView.innerText = DERIVE_ADDRESSES
   window.mnemonic_password.onchange = (e) => {
     MNEMONIC_PASSWORD = e.target.value
+    localStorage.setItem('mnemonic_password', MNEMONIC_PASSWORD)
   }
 
   async function checkInput() {
-    const res = await validateInput()
-    window.brute.style.visibility = res ? 'visible' : 'hidden'
+    const res = await validateInput(!pausedBruteforce)
+    window.start_btn.style.display = (res && !pausedBruteforce) ? 'block' : 'none'
     if (res && res.permCount === 1) {
       window.passwords_source.style.display = 'inline-block'
       window.passwords_files_view.style.display = PASSWORD_SOURCE === 'file' ? 'block' : 'none'
@@ -61,26 +106,36 @@ document.addEventListener('DOMContentLoaded', () => {
       window.passwords_files_view.style.display = 'none'
     }
   }
-  window.bipmask.onchange = checkInput
-  window.bipmask.oninput = checkInput
-  window.addrlist.onchange = checkInput
-  window.addrlist.oninput = checkInput
+
+  function loadSavedState() {
+    window.bipmask.value = localStorage.getItem('bipmask') || window.bipmask.value
+    window.addrlist.value = localStorage.getItem('addrlist') || window.addrlist.value
+    DERIVE_ADDRESSES = Number(localStorage.getItem('derive_addresses')) || 1
+    PASSWORD_SOURCE = localStorage.getItem('password_source') || 'default'
+    MNEMONIC_PASSWORD = localStorage.getItem('mnemonic_password') || ''
+    window.derive.value = Math.log2(DERIVE_ADDRESSES)
+    window.deriveView.innerText = DERIVE_ADDRESSES
+    window.mnemonic_password.value = MNEMONIC_PASSWORD
+  }
+  loadSavedState()
+
+  const checkedSeeds = Number(localStorage.getItem('seeds_checked'))
+  if (checkedSeeds) {
+    showPausedBruteforce()
+    const { permCount } = permutations(window.bipmask.value)
+    log(`Bruteforce saved at ${(checkedSeeds / permCount * 100 | 0)}%`)
+  }
   checkInput()
+
+  window.bipmask.onchange = () => { localStorage.setItem('bipmask', window.bipmask.value); checkInput() }
+  window.bipmask.oninput = checkInput
+  window.addrlist.onchange = () => { localStorage.setItem('addrlist', window.addrlist.value); checkInput() }
+  window.addrlist.oninput = checkInput
 })
 
-function logCompilationProgress() {
-  let prevProgress = null
-  return (shaderName) => {
-    if (prevProgress) { window.output.innerHTML += ` [${((Date.now() - prevProgress)/1000).toFixed(1)}s]\n` }
-    prevProgress = Date.now()
-    if (shaderName) { window.output.innerHTML += `Compile shader: ${shaderName}...` }
-  }
-}
-
-async function brutePasswordGPU({ bip39mask, hashList, addrType }) {
-    let stopped = false
-    window.brute.onclick = () => { stopped = true }
-    window.brute.innerText = '🛑 STOP'
+async function brutePasswordGPU({ SAVED_PROGRESS, bip39mask, hashList, addrType }) {
+    let paused = false
+    window.pause_btn.onclick = () => paused = true
     
     const batchSize = 1024 * 32
     const ADDR_COUNT = DERIVE_ADDRESSES
@@ -118,7 +173,7 @@ async function brutePasswordGPU({ bip39mask, hashList, addrType }) {
         hashList,
     })
     let curList = 0, nextBatch = null;
-    while (!stopped) {
+    while (!paused) {
         const inp = nextBatch && (await nextBatch(batchSize))
         if (!inp) {
           if (curList >= PASSWORD_LISTS.length) {
@@ -143,16 +198,12 @@ async function brutePasswordGPU({ bip39mask, hashList, addrType }) {
             break
         }
     }
-
     clean()
-    window.brute.onclick = brutePasswordGPU
-    window.brute.innerText = 'Brute'
 }
 
-async function bruteSeedGPU({ bip39mask, hashList, addrType }) {
-  let stopped = false
-  window.brute.onclick = () => { stopped = true }
-  window.brute.innerText = '🛑 STOP'
+async function bruteSeedGPU({ SAVED_PROGRESS, bip39mask, hashList, addrType }) {
+  let paused = false
+  window.pause_btn.onclick = () => paused = true
 
   const batchSize = 1024 * 32
   const ADDR_COUNT = DERIVE_ADDRESSES
@@ -163,8 +214,8 @@ async function bruteSeedGPU({ bip39mask, hashList, addrType }) {
     setEccTable,
     inferenceMask,
     prepareShaderPipeline,
-  } = await webGPUinit({ BUF_SIZE: batchSize*128*ADDR_COUNT })
-  log(`[${name}]\nBruteforce init...`, true)
+  } = await webGPUinit({ SAVED_PROGRESS, BUF_SIZE: batchSize*128*ADDR_COUNT })
+  log(SAVED_PROGRESS ? `[${name}]\nBruteforce resume...` : `[${name}]\nBruteforce init...`, true)
   await setEccTable(addrType === 'solana' ? 'ed25519' : 'secp256k1')
   await prepareShaderPipeline({
     progress: logCompilationProgress(),
@@ -177,14 +228,14 @@ async function bruteSeedGPU({ bip39mask, hashList, addrType }) {
     hashList,
   })
   const { perm, permCount, seedsPerValid } = permutations(bip39mask)
-  console.log('permCount:', permCount / seedsPerValid | 0)
-  while (!stopped) {
+  while (!paused) {
     const start = performance.now()
-    const { ended, found, progress } = await inferenceMask({
+    const { ended, found, progress, seedsChecked } = await inferenceMask({
       count: batchSize,
       permCount,
       seedsPerValid,
     })
+    localStorage.setItem('seeds_checked', seedsChecked)
     const time = (performance.now() - start) / 1000
     const speed = batchSize / time | 0
     log(`[${name}]\n${progress * 100 | 0}% ${speed} seeds/s`, true)
@@ -199,8 +250,16 @@ async function bruteSeedGPU({ bip39mask, hashList, addrType }) {
   }
   
   clean()
-  window.brute.onclick = brutePasswordGPU
-  window.brute.innerText = 'Brute'
+  return paused
+}
+
+function logCompilationProgress() {
+  let prevProgress = null
+  return (shaderName) => {
+    if (prevProgress) { window.output.innerHTML += ` [${((Date.now() - prevProgress)/1000).toFixed(1)}s]\n` }
+    prevProgress = Date.now()
+    if (shaderName) { window.output.innerHTML += `Compile shader: ${shaderName}...` }
+  }
 }
 
 async function getPasswords(file) {
@@ -289,7 +348,7 @@ async function getPasswords(file) {
   return batch;
 }
 
-async function validateInput() {
+async function validateInput(showLog) {
   var output = ''
   const bip39mask = window.bipmask.value
   let result = true
@@ -346,7 +405,7 @@ async function validateInput() {
     `Variants: ${permCount < 10_000_000 ? `${permCount / 1000 | 0} thousands` : `${permCount / 1_000_000 | 0} million`}`, permCount > 1 && MNEMONIC_PASSWORD &&
     `Password: ${MNEMONIC_PASSWORD}`
   ].filter(x => x).join('\n'))
-  window.output.innerHTML = output
+  if (showLog) { window.output.innerHTML = output }
   return result && { bip39mask: words.join(' '), permCount, addrHash160list, addrTypes }
 }
 
