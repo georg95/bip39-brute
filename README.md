@@ -49,7 +49,7 @@ Password: gauffers (usernames.txt password list)
 - [x] Read passwords from file
 - [x] Passphrase for mask recovery mode
 - [x] Shaders compilation progress
-- [ ] Save current settings & progress
+- [x] Save current settings & progress
 - [ ] Links for recovery state
 - [ ] Readme docs and examples
 - [ ] Better benchmarks

@@ -3,9 +3,13 @@ let PASSWORD_SOURCE = 'default'
 let PASSWORD_FILES = []
 let MNEMONIC_PASSWORD = ''
 document.addEventListener('DOMContentLoaded', () => {
-  let pausedBruteforce = !!Number(localStorage.getItem('seeds_checked'))
+  let pausedBruteforce = !!localStorage.getItem('progress')
   window.resume_btn.onclick = () => {
-    startBruteforce(Number(localStorage.getItem('seeds_checked')))
+    let savedProgress = localStorage.getItem('progress')
+    if (savedProgress) {
+      savedProgress = JSON.parse(savedProgress)
+    }
+    startBruteforce(savedProgress)
   }
   window.start_btn.onclick = () => startBruteforce()
   window.stop_btn.onclick = stopCurrentBruteforce
@@ -14,14 +18,15 @@ document.addEventListener('DOMContentLoaded', () => {
     window.stop_btn.style.display = 'none'
     window.resume_btn.style.display = 'none'
     window.start_btn.style.display = 'block'
-    localStorage.setItem('seeds_checked', 0)
+    localStorage.setItem('progress', '')
     window['show-settings'].style.display = ''
+    window.passwords_source.disabled = false
     window.derive.disabled = false
     window.mnemonic_password.disabled = false
     window.bipmask.disabled = false
     window.addrlist.disabled = false
     pausedBruteforce = false
-    validateInput()
+    validateInput(true)
   }
   function showPausedBruteforce() {
     window.pause_btn.style.display = 'none'
@@ -29,6 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.stop_btn.style.display = 'block'
     window.resume_btn.style.display = 'block'
     window['show-settings'].style.display = 'none'
+    window.passwords_source.disabled = true
     window.derive.disabled = true
     window.mnemonic_password.disabled = true
     window.bipmask.disabled = true
@@ -37,12 +43,19 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   async function startBruteforce(SAVED_PROGRESS) {
     const { permCount, bip39mask, addrHash160list, addrTypes } = await validateInput(false)
+    if (permCount === 1 && SAVED_PROGRESS && PASSWORD_SOURCE === 'file') {
+      if (localStorage.getItem('password_files') !== PASSWORD_FILES.map(f => f.name).join(',')) {
+        log(`Select these files to resume: ${localStorage.getItem('password_files')}`)
+        return
+      }
+    }
 
     window.start_btn.style.display = 'none'
     window.resume_btn.style.display = 'none'
     window.stop_btn.style.display = 'none'
     window.pause_btn.style.display = 'block'
     window['show-settings'].style.display = 'none'
+    window.passwords_source.disabled = true
     window.derive.disabled = true
     window.mnemonic_password.disabled = true
     window.bipmask.disabled = true
@@ -50,6 +63,9 @@ document.addEventListener('DOMContentLoaded', () => {
     pausedBruteforce = true
     let paused = false
     if (permCount > 1) {
+      if (SAVED_PROGRESS) {
+        SAVED_PROGRESS = SAVED_PROGRESS.seeds
+      }
       paused = await bruteSeedGPU({ SAVED_PROGRESS, bip39mask, hashList: addrHash160list, addrType: addrTypes[0] })
     } else {
       paused = await brutePasswordGPU({ SAVED_PROGRESS, bip39mask, hashList: addrHash160list, addrType: addrTypes[0] })
@@ -83,7 +99,8 @@ document.addEventListener('DOMContentLoaded', () => {
   window['hide-settings'].onclick = () => {
     window['brute-pane'].style.display = 'block'
     window['settings-pane'].style.display = 'none'
-    validateInput()
+    console.log('validateInput')
+    validateInput(true)
   }
   window.derive.oninput = () => {
     DERIVE_ADDRESSES = 2 ** Number(window.derive.value)
@@ -112,6 +129,8 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addrlist.value = localStorage.getItem('addrlist') || window.addrlist.value
     DERIVE_ADDRESSES = Number(localStorage.getItem('derive_addresses')) || 1
     PASSWORD_SOURCE = localStorage.getItem('password_source') || 'default'
+    window.passwords_files_view.style.display = PASSWORD_SOURCE === 'file' ? 'block' : 'none'
+    window.passwords_source.options.selectedIndex = PASSWORD_SOURCE === 'file' ? 1 : 0
     MNEMONIC_PASSWORD = localStorage.getItem('mnemonic_password') || ''
     window.derive.value = Math.log2(DERIVE_ADDRESSES)
     window.deriveView.innerText = DERIVE_ADDRESSES
@@ -119,11 +138,16 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   loadSavedState()
 
-  const checkedSeeds = Number(localStorage.getItem('seeds_checked'))
-  if (checkedSeeds) {
+  let progress = localStorage.getItem('progress')
+  if (progress) {
+    progress = JSON.parse(progress)
     showPausedBruteforce()
     const { permCount } = permutations(window.bipmask.value)
-    log(`Bruteforce saved at ${(checkedSeeds / permCount * 100 | 0)}%`)
+    if (permCount > 1) {
+      log(`Bruteforce saved at ${(progress.seeds / permCount * 100 | 0)}%`)
+    } else {
+      log(`Bruteforce saved at ${progress.progress.toFixed(1)}% ${progress.file}`)
+    }
   }
   checkInput()
 
@@ -147,7 +171,7 @@ async function brutePasswordGPU({ SAVED_PROGRESS, bip39mask, hashList, addrType 
       setEccTable,
       prepareShaderPipeline,
     } = await webGPUinit({ BUF_SIZE: batchSize*128*ADDR_COUNT })
-    log(`[${gpuName}]\nBruteforce init...`, true)
+    log(SAVED_PROGRESS ? `[${gpuName}]\nBruteforce resume...` : `[${gpuName}]\nBruteforce init...`, true)
     await setEccTable(addrType === 'solana' ? 'ed25519' : 'secp256k1')
     const PASSWORD_LISTS = PASSWORD_SOURCE === 'default' ? [
       { url: 'forced-browsing/all.txt', filePasswords: 43135 },
@@ -163,7 +187,6 @@ async function brutePasswordGPU({ SAVED_PROGRESS, bip39mask, hashList, addrType 
       { url: '8-more-passwords.txt', filePasswords: 61682 },
       { url: 'facebook-firstnames.txt', filePasswords: 4347667 },
     ] : PASSWORD_FILES
-    // PASSWORD_LISTS.sort((a, b) => a.filePasswords - b.filePasswords)
     await prepareShaderPipeline({
         progress: logCompilationProgress(),
         addrType,
@@ -172,7 +195,10 @@ async function brutePasswordGPU({ SAVED_PROGRESS, bip39mask, hashList, addrType 
         WORKGROUP_SIZE,
         hashList,
     })
-    let curList = 0, nextBatch = null;
+    let curList = 0, nextBatch = null, passwordsChecked = 0, curFile = '', rewind = !!SAVED_PROGRESS
+    if (SAVED_PROGRESS) {
+      curList = PASSWORD_LISTS.findIndex((f) => (f.url || f.name) === SAVED_PROGRESS.file)
+    }
     while (!paused) {
         const inp = nextBatch && (await nextBatch(batchSize))
         if (!inp) {
@@ -180,9 +206,18 @@ async function brutePasswordGPU({ SAVED_PROGRESS, bip39mask, hashList, addrType 
             log(`Password not found :(`, true)
             break
           }
+          passwordsChecked = 0
+          curFile = PASSWORD_LISTS[curList].url || PASSWORD_LISTS[curList].name
           nextBatch = await getPasswords(PASSWORD_LISTS[curList++])
           continue
         }
+        passwordsChecked += batchSize
+        if (rewind && passwordsChecked < SAVED_PROGRESS.passwords) {
+          log(`[${gpuName}]\n${inp.name} (${curList}/${PASSWORD_LISTS.length}) ${inp.progress.toFixed(1).padStart(4, '')}% rewind...`, true)
+          continue
+        }
+        rewind = false
+        localStorage.setItem('progress', JSON.stringify({ passwords: passwordsChecked, progress: inp.progress, file: curFile }))
         const start = performance.now()
         out = await inference({ inp: new Uint32Array(inp.passwords), count: batchSize })
         const time = (performance.now() - start) / 1000
@@ -199,6 +234,7 @@ async function brutePasswordGPU({ SAVED_PROGRESS, bip39mask, hashList, addrType 
         }
     }
     clean()
+    return paused
 }
 
 async function bruteSeedGPU({ SAVED_PROGRESS, bip39mask, hashList, addrType }) {
@@ -235,7 +271,7 @@ async function bruteSeedGPU({ SAVED_PROGRESS, bip39mask, hashList, addrType }) {
       permCount,
       seedsPerValid,
     })
-    localStorage.setItem('seeds_checked', seedsChecked)
+    localStorage.setItem('progress', JSON.stringify({ seeds: seedsChecked }))
     const time = (performance.now() - start) / 1000
     const speed = batchSize / time | 0
     log(`[${name}]\n${progress * 100 | 0}% ${speed} seeds/s`, true)
