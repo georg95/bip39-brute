@@ -47,7 +47,7 @@ Password: gauffers (usernames.txt password list)
 - [x] More than 4 billion permutation support
 - [x] Partial word masks
 - [x] Read passwords from file
-- [ ] Passphrase for mask recovery mode
+- [x] Passphrase for mask recovery mode
 - [ ] Shaders compilation progress
 - [ ] Save current settings & progess
 - [ ] Links for recovery state

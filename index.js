@@ -1,6 +1,7 @@
 let DERIVE_ADDRESSES = 1
 let PASSWORD_SOURCE = 'default'
 let PASSWORD_FILES = []
+let MNEMONIC_PASSWORD = ''
 document.addEventListener('DOMContentLoaded', () => {
   window.brute.onclick = async () => {
     const { permCount, bip39mask, addrHash160list, addrTypes } = await validateInput()
@@ -45,6 +46,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   window.derive.value = Math.log2(DERIVE_ADDRESSES)
   window.deriveView.innerText = DERIVE_ADDRESSES
+  window.mnemonic_password.onchange = (e) => {
+    MNEMONIC_PASSWORD = e.target.value
+  }
 
   async function checkInput() {
     const res = await validateInput()
@@ -136,6 +140,10 @@ async function brutePasswordGPU({ bip39mask, hashList, addrType }) {
 }
 
 async function bruteSeedGPU({ bip39mask, hashList, addrType }) {
+  let stopped = false
+  window.brute.onclick = () => { stopped = true }
+  window.brute.innerText = '🛑 STOP'
+
   const batchSize = 1024 * 32
   const ADDR_COUNT = DERIVE_ADDRESSES
   const WORKGROUP_SIZE = 64
@@ -153,12 +161,13 @@ async function bruteSeedGPU({ bip39mask, hashList, addrType }) {
     addrType,
     addrCount: ADDR_COUNT,
     MNEMONIC: bip39mask,
+    MNEMONIC_PASSWORD,
     WORKGROUP_SIZE,
     hashList,
   })
   const { perm, permCount, seedsPerValid } = permutations(bip39mask)
   console.log('permCount:', permCount / seedsPerValid | 0)
-  while (true) {
+  while (!stopped) {
     const start = performance.now()
     const { ended, found, progress } = await inferenceMask({
       count: batchSize,
@@ -177,7 +186,10 @@ async function bruteSeedGPU({ bip39mask, hashList, addrType }) {
       break
     }
   }
+  
   clean()
+  window.brute.onclick = brutePasswordGPU
+  window.brute.innerText = 'Brute'
 }
 
 async function getPasswords(file) {
@@ -320,7 +332,8 @@ async function validateInput() {
     `Mode:     ${mode}`,
     `Address:  ${addrTypes[0]}`,
     `Derived:  ${DERIVE_ADDRESSES}`, permCount > 1 &&
-    `Variants: ${permCount < 10_000_000 ? `${permCount / 1000 | 0} thousands` : `${permCount / 1_000_000 | 0} million`}`,
+    `Variants: ${permCount < 10_000_000 ? `${permCount / 1000 | 0} thousands` : `${permCount / 1_000_000 | 0} million`}`, permCount > 1 && MNEMONIC_PASSWORD &&
+    `Password: ${MNEMONIC_PASSWORD}`
   ].filter(x => x).join('\n'))
   window.output.innerHTML = output
   return result && { bip39mask: words.join(' '), permCount, addrHash160list, addrTypes }

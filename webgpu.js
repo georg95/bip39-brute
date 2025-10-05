@@ -154,7 +154,7 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
       mode: null,
     };
 
-    async function prepareShaderPipeline({ addrType, mode, addrCount, MNEMONIC, WORKGROUP_SIZE, hashList }) {
+    async function prepareShaderPipeline({ addrType, mode, addrCount, MNEMONIC, MNEMONIC_PASSWORD, WORKGROUP_SIZE, hashList }) {
         assert(addrType && ADDRTYPEMAP[addrType] && MNEMONIC && WORKGROUP_SIZE && hashList)
         const [NETWORK, COIN_TYPE] = ADDRTYPEMAP[addrType]
         shaders.pipeline = []
@@ -164,7 +164,7 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
           await initValidSeedsShader(MNEMONIC, WORKGROUP_SIZE)
           console.timeEnd('[COMPILE] valid seeds generator');
           console.time('[COMPILE] pbkdf2');
-          shaders.pipeline.push(await Pbkdf2MaskShader(MNEMONIC, WORKGROUP_SIZE))
+          shaders.pipeline.push(await Pbkdf2MaskShader(MNEMONIC, MNEMONIC_PASSWORD, WORKGROUP_SIZE))
           console.timeEnd('[COMPILE] pbkdf2');
           swapBuffers()
         } else {
@@ -403,10 +403,13 @@ async function webGPUinit({ BUF_SIZE, adapter, device }) {
       validSeedsShader = { ...bindGroupSeeds, pipeline, workPerWarp: WORKGROUP_SIZE * MNEMONICS_PER_THREAD }
     }
 
-    async function Pbkdf2MaskShader(bip39mask, WORKGROUP_SIZE) {
+    async function Pbkdf2MaskShader(bip39mask, MNEMONIC_PASSWORD, WORKGROUP_SIZE) {
       let pbkdf2Code = setPermutationsMask(bip39mask, (await fetch('wgsl/pbkdf2_mask.wgsl').then(r => r.text())))
           .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10)) 
           .replaceAll('WORD_COUNT', (bip39mask.split(' ').length).toString(10))   
+          .replaceAll('PASS_LEN', (MNEMONIC_PASSWORD.length + 1).toString(10))
+           // 1 character is stub because wgsl not allow 0-item arrays
+          .replaceAll('PASSWORD__', ((MNEMONIC_PASSWORD+'_').split('').map(x => `${x.charCodeAt(0)}u`).join(', ')).toString(10))
       const module = device.createShaderModule({ code: pbkdf2Code })
       const shaderInfo = await module.getCompilationInfo()
       if (shaderInfo.messages?.length > 0) {

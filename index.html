@@ -23,12 +23,11 @@
         body {
             padding: 20px;
         }
-        textarea {
-            width: 100%;
+        textarea, input[type="text"] {
             background-color: #222;
             color: bisque;
-            min-height: 80px;
             box-sizing: border-box;
+            font-family: 'Courier New', Courier, monospace;
         }
         button, select, option {
             background-color: #222;
@@ -54,12 +53,14 @@
             display: flex;
             justify-content: space-between;
         }
-        textarea, select, option {
+        textarea, select, option, input[type="text"] {
             border: 1px solid bisque;
             padding: 6px;
         }
         textarea {
             display: block;
+            min-height: 80px;
+            width: 100%;
         }
         select {
             margin-top: 20px;
@@ -80,10 +81,10 @@
     <header id="brute-pane">
         <h1 class="top-header">Mnemonic<button id="show-settings">⚙️</button></h1>
         <!-- slab between length about you flower switch celery gap trade warrior wrestle cycle elephant gravity wealth globe various sick uncover despair decade depth open -->
-        <!-- bac1119xrra -->
-        <textarea id="bipmask" spellcheck="false">slab between length about you flower switch celery gap trade warrior wrestle cycle elephant gravity wealth globe various sick uncover despair decade depth open</textarea>
+        <!-- password123 -->
+        <textarea id="bipmask" spellcheck="false">slab * * about you flower switch celery gap trade warrior wrestle cycle elephant gravity wealth globe various sick uncover despair decade depth open</textarea>
         <h1>Known address list</h1>
-        <textarea id="addrlist" spellcheck="false">18r4ALXiVsnMwPEzNaEGBoXtywfhxr2HzY</textarea>
+        <textarea id="addrlist" spellcheck="false">1L9KD3CyJ9wMVKoEuR2ZMu3YUCAdf34oxQ</textarea>
         
         <select name="passwords-source" id="passwords_source">
             <option name="default">Default passwords dictionary</option>
@@ -100,6 +101,8 @@
         <h1 class="top-header">Settings <button id="hide-settings">⚙️</button></h1>
         <h2>Derive addresses: <span id="deriveView">1</span></h2>
         <input type="range" id="derive" min="0" step="1" max="5" value="0">
+        <h2>Mnemonic password (for mask mode):</h2>
+        <input type="text" id="mnemonic_password" spellcheck="false"></input>
     </header>
 </body>
 </html>

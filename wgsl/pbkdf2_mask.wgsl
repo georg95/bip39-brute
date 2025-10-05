@@ -1277,13 +1277,17 @@ fn initSeeds(tmp_buf: ptr<function, array<u32, 32>>, seed1: ptr<function, array<
   for (var i: u32 = 0u; i < 16u; i += 1u) { seed2[i] = tmp_buf[i]; }
 }
 
+const PASSWORD = array<u32, PASS_LEN>(PASSWORD__);
 fn initBuffer(tmp_buf: ptr<function, array<u32, 32>>, seed1: ptr<function, array<u32, 16>>, seed2: ptr<function, array<u32, 16>>) {
   for (var i = 0; i < 32; i += 1) { tmp_buf[i] = 0; }
   tmp_buf[0] = 0x6d6e656d; // mnem
   tmp_buf[1] = 0x6f6e6963; // onic
-  setByteArr(tmp_buf, 11, 0x01);
-  setByteArr(tmp_buf, 12, 0x80);
-  tmp_buf[31] = 140 * 8;
+  for (var i = 0u; i < PASS_LEN - 1; i++) { // 1 character is stub because wgsl not allow 0-item arrays
+    setByteArr(tmp_buf, 8u + i, PASSWORD[i]);
+  }
+  setByteArr(tmp_buf, PASS_LEN + 10, 0x01);
+  setByteArr(tmp_buf, PASS_LEN + 11, 0x80);
+  tmp_buf[31] = (PASS_LEN + 139) * 8;
   sha512(tmp_buf, seed1);
   for (var i = 16; i < 32; i += 1) { tmp_buf[i] = 0; }
   tmp_buf[16] = 0x80000000;
