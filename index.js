@@ -3,7 +3,7 @@ let PASSWORD_SOURCE = 'default'
 let PASSWORD_FILES = []
 let MNEMONIC_PASSWORD = ''
 document.addEventListener('DOMContentLoaded', () => {
-  let pausedBruteforce = !!localStorage.getItem('progress')
+  let pausedBruteforce = false
   window.resume_btn.onclick = () => {
     let savedProgress = localStorage.getItem('progress')
     if (savedProgress) {
@@ -123,7 +123,35 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function createStateURL() {
+    const state = {
+      list:	window.addrlist.value,
+      bip: window.bipmask.value,
+    }
+    if (window.derive.value > 0) { state.derive = 2 ** window.derive.value }
+    if (MNEMONIC_PASSWORD) { state.password = MNEMONIC_PASSWORD }
+    var url = new URL(location.href)
+    return url.searchParams.set('state', btoa(JSON.stringify(state)))
+  }
+
   function loadSavedState() {
+    var url = new URL(location.href)
+    var state = url.searchParams.get('state')
+    if (url.searchParams.get('state')) {
+      state = JSON.parse(atob(url.searchParams.get('state')))
+      console.log('set saved state', state)
+      window.bipmask.value = state.bip
+      window.addrlist.value = state.list
+      DERIVE_ADDRESSES = state.derive || 1
+      PASSWORD_SOURCE = 'default'
+      window.passwords_files_view.style.display = 'none'
+      window.passwords_source.options.selectedIndex = 0
+      MNEMONIC_PASSWORD = state.password || ''
+      window.derive.value = Math.log2(DERIVE_ADDRESSES)
+      window.deriveView.innerText = DERIVE_ADDRESSES
+      window.mnemonic_password.value = MNEMONIC_PASSWORD
+      return
+    }
     window.bipmask.value = localStorage.getItem('bipmask') || window.bipmask.value
     window.addrlist.value = localStorage.getItem('addrlist') || window.addrlist.value
     DERIVE_ADDRESSES = Number(localStorage.getItem('derive_addresses')) || 1
@@ -134,20 +162,21 @@ document.addEventListener('DOMContentLoaded', () => {
     window.derive.value = Math.log2(DERIVE_ADDRESSES)
     window.deriveView.innerText = DERIVE_ADDRESSES
     window.mnemonic_password.value = MNEMONIC_PASSWORD
-  }
-  loadSavedState()
-
-  let progress = localStorage.getItem('progress')
-  if (progress) {
-    progress = JSON.parse(progress)
-    showPausedBruteforce()
-    const { permCount } = permutations(window.bipmask.value)
-    if (permCount > 1) {
-      log(`Bruteforce saved at ${(progress.seeds / permCount * 100 | 0)}%`)
-    } else {
-      log(`Bruteforce saved at ${progress.progress.toFixed(1)}% ${progress.file}`)
+    
+    let progress = localStorage.getItem('progress')
+    if (progress) {
+      pausedBruteforce = true
+      progress = JSON.parse(progress)
+      showPausedBruteforce()
+      const { permCount } = permutations(window.bipmask.value)
+      if (permCount > 1) {
+        log(`Bruteforce saved at ${(progress.seeds / permCount * 100 | 0)}%`)
+      } else {
+        log(`Bruteforce saved at ${progress.progress.toFixed(1)}% ${progress.file}`)
+      }
     }
   }
+  loadSavedState()
   checkInput()
 
   window.bipmask.onchange = () => { localStorage.setItem('bipmask', window.bipmask.value); checkInput() }
