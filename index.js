@@ -92,6 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.passwords_files_view.innerText = PASSWORD_FILES.map(f => `${f.name.padEnd(maxLen, ' ')} ${formatSize(f)}`).join('\n')
   }
   window['show-settings'].onclick = () => {
+    setCurerntBruteforceLink()
     window['brute-pane'].style.display = 'none'
     window['settings-pane'].style.display = 'block'
   }
@@ -105,10 +106,12 @@ document.addEventListener('DOMContentLoaded', () => {
     DERIVE_ADDRESSES = 2 ** Number(window.derive.value)
     window.deriveView.innerText = DERIVE_ADDRESSES
     localStorage.setItem('derive_addresses', DERIVE_ADDRESSES)
+    setCurerntBruteforceLink()
   }
-  window.mnemonic_password.onchange = (e) => {
+  window.mnemonic_password.onchange = window.mnemonic_password.oninput = (e) => {
     MNEMONIC_PASSWORD = e.target.value
     localStorage.setItem('mnemonic_password', MNEMONIC_PASSWORD)
+    setCurerntBruteforceLink()
   }
 
   async function checkInput() {
@@ -123,7 +126,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function createStateURL() {
+  function setCurerntBruteforceLink() {
     const state = {
       list:	window.addrlist.value,
       bip: window.bipmask.value,
@@ -131,7 +134,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.derive.value > 0) { state.derive = 2 ** window.derive.value }
     if (MNEMONIC_PASSWORD) { state.password = MNEMONIC_PASSWORD }
     var url = new URL(location.href)
-    return url.searchParams.set('state', btoa(JSON.stringify(state)))
+    url.searchParams.set('state', btoa(JSON.stringify(state)))
+    window.bruteforce_link.href = url.toString()
+    window.bruteforce_link.innerText = url.toString()
   }
 
   function loadSavedState() {

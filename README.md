@@ -50,7 +50,7 @@ Password: gauffers (usernames.txt password list)
 - [x] Passphrase for mask recovery mode
 - [x] Shaders compilation progress
 - [x] Save current settings & progress
-- [ ] Links for recovery state
+- [x] Links for recovery state
 - [ ] Readme docs and examples
 - [ ] Better benchmarks
 - [ ] Naming project
