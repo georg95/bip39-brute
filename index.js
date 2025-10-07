@@ -300,6 +300,7 @@ async function bruteSeedGPU({ SAVED_PROGRESS, bip39mask, hashList, addrType }) {
   while (!paused) {
     const start = performance.now()
     const { ended, found, progress, seedsChecked } = await inferenceMask({
+      derivePerSeed: ADDR_COUNT,
       count: batchSize,
       permCount,
       seedsPerValid,

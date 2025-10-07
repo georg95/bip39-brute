@@ -101,7 +101,7 @@ async function webGPUinit({ SAVED_PROGRESS, BUF_SIZE, adapter, device }) {
     let seedsBatchAmount = 0
     let seedsGenerated = SAVED_PROGRESS || 0
     let seedsChecked = SAVED_PROGRESS || 0
-    async function inferenceMask({ count, permCount, seedsPerValid }) {
+    async function inferenceMask({ count, permCount, derivePerSeed, seedsPerValid }) {
         assert(validSeedsShader, 'call initValidSeedsShader first')
         const SEED_GEN_MULTIPLIER = 3.9
         const SEED_GEN = Math.ceil(seedsPerValid * SEED_GEN_MULTIPLIER * count)
@@ -115,7 +115,6 @@ async function webGPUinit({ SAVED_PROGRESS, BUF_SIZE, adapter, device }) {
             assert(Math.floor(seedsGenerated / 0x100000000) === Math.floor((seedsGenerated + seedsToGeneate - 1) / 0x100000000), 'should generate seeds only inside chunk')
             seedsChecked = seedsGenerated
             seedsGenerated += seedsToGeneate
-            console.log('seedsGenerated:', seedsGenerated)
             const commandEncoder = device.createCommandEncoder()
             const passEncoder = commandEncoder.beginComputePass()
             passEncoder.setBindGroup(0, validSeedsShader.binding)
@@ -141,7 +140,7 @@ async function webGPUinit({ SAVED_PROGRESS, BUF_SIZE, adapter, device }) {
         passEncoder.end()
         const result = await readGpuBuffer(shadersLine[shadersLine.length - 1].bufferOut, 0, 1024, commandEncoder)
         if (result[0] !== 0xffffffff) {
-          const seedOffset = result[0] + 3 + (curSeedsBatch - count)
+          const seedOffset = (result[0] / derivePerSeed | 0) + 3 + (curSeedsBatch - count)
           const hi = Math.floor((seedsGenerated - 1) / 0x100000000) * 0x100000000
           return { ended: true, found: (await readGpuBuffer(buffers.seeds, seedOffset, 1))[0] + hi }
         }
