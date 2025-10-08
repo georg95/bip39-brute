@@ -804,12 +804,7 @@ function unrolledSha512mask_wgpu(template) {
     }
   }
 
-  var snippet = (i) => {
-
-    var xhi1 = `W[${(i + 28) & 0x1f}]`
-    var xlo1 = `W[${(i + 29) & 0x1f}]`
-    var xhi2 = `W[${(i + 2) & 0x1f}]`
-    var xlo2 = `W[${(i + 3) & 0x1f}]`
+  var mainLoopOps = (i) => {
     let t1const = { lo_s: 't1_lo', hi_s: 't1_hi' }
     let t2const = { lo_s: 't2_lo', hi_s: 't2_hi' }
     let w1const = { lo_s: `W[${(i + 19) & 0x1f}]`, hi_s: `W[${(i + 18) & 0x1f}]` }
@@ -838,10 +833,10 @@ function unrolledSha512mask_wgpu(template) {
         }
       }
       components = [w1const, w2const, t1const, t2const].filter(x => x.lo == null)
-      addition = `acc_lo = ${components[0].lo_s} + ${lo};\n`
+      addition = `\nacc_lo = ${components[0].lo_s} + ${lo};\n`
       addition += `acc_hi = ${components[0].hi_s} + ${hi ? `${hi} + ` : ''}select(0u, 1u, acc_lo < ${lo});\n`
       if (lo === 0) {
-        addition = `acc_lo = ${components[0].lo_s} + ${components[1].lo_s};\n`
+        addition = `\nacc_lo = ${components[0].lo_s} + ${components[1].lo_s};\n`
         addition += `acc_hi = ${components[0].hi_s} + ${components[1].hi_s} + ${hi ? `${hi} + ` : ''}select(0u, 1u, acc_lo < ${components[0].lo_s});\n`
       }
       for (let { lo_s, hi_s } of components.slice(lo === 0 ? 2 : 1)) {
@@ -849,24 +844,19 @@ function unrolledSha512mask_wgpu(template) {
         addition += `acc_hi += ${hi_s} + select(0u, 1u, acc_lo < ${lo_s});\n`
       }
     }
-    var additionAll = `acc_lo = W[${(i + 19) & 0x1f}] + W[${(i + 1) & 0x1f}];
-      acc_hi = W[${(i + 18) & 0x1f}] + W[${i & 0x1f}] + select(0u, 1u, acc_lo < W[${(i + 19) & 0x1f}]);
-      acc_lo = acc_lo + ${t1const.lo != null ? t1const.lo : 't1_lo'};
-      acc_hi = acc_hi + ${t1const.lo != null ? t1const.hi : 't1_hi'} + select(0u, 1u, acc_lo < ${t1const.lo != null ? t1const.lo : 't1_lo'});
-      acc_lo += ${t2const.lo != null ? t2const.lo : 't2_lo'};
-      acc_hi += ${t2const.lo != null ? t2const.hi : 't2_hi'} + select(0u, 1u, acc_lo < ${t2const.lo != null ? t2const.lo : 't2_lo'});`
-
     W_INITIAL[(i + 1) & 0x1f] = null
     W_INITIAL[i & 0x1f] = null
+    var xhi1 = `W[${(i + 28) & 0x1f}]`
+    var xlo1 = `W[${(i + 29) & 0x1f}]`
+    var xhi2 = `W[${(i + 2) & 0x1f}]`
+    var xlo2 = `W[${(i + 3) & 0x1f}]`
     return (t1const.lo == null ? `
       t1_hi = ((${xhi1} >> 19) | (${xlo1} << 13)) ^ ((${xlo1} >> 29) | (${xhi1} << 3)) ^ (${xhi1} >> 6);
       t1_lo = ((${xlo1} >> 19) | (${xhi1} << 13)) ^ ((${xhi1} >> 29) | (${xlo1} << 3)) ^ ((${xlo1} >> 6) | (${xhi1} << 26));` : '') +
-      (t2const.lo == null ?
-      `t2_hi = ((${xhi2} >> 1) | (${xlo2} << 31)) ^ ((${xhi2} >> 8) | (${xlo2} << 24)) ^ (${xhi2} >> 7);
+      (t2const.lo == null ? `
+      t2_hi = ((${xhi2} >> 1) | (${xlo2} << 31)) ^ ((${xhi2} >> 8) | (${xlo2} << 24)) ^ (${xhi2} >> 7);
       t2_lo = ((${xlo2} >> 1) | (${xhi2} << 31)) ^ ((${xlo2} >> 8) | (${xhi2} << 24)) ^ ((${xlo2} >> 7) | (${xhi2} << 25));` : '')
-      + addition +
-      `W[${(i + 1) & 0x1f}] = acc_lo;
-      W[${i & 0x1f}] = acc_hi;
+      + addition + `
       t1_lo = hlo + (((elo >> 14) | (ehi << 18)) ^ ((elo >> 18) | (ehi << 14)) ^ ((ehi >> 9) | (elo << 23)));
       t1_hi = hhi + (((ehi >> 14) | (elo << 18)) ^ ((ehi >> 18) | (elo << 14)) ^ ((elo >> 9) | (ehi << 23))) + select(0u, 1u, t1_lo < hlo);
       tmp = (elo & flo) ^ ((~elo) & glo);
@@ -874,15 +864,17 @@ function unrolledSha512mask_wgpu(template) {
       t1_hi = t1_hi + ((ehi & fhi) ^ ((~ehi) & ghi)) + select(0u, 1u, t1_lo < tmp);
       t1_lo = t1_lo + ${K[i + 1]};
       t1_hi = t1_hi + ${K[i]} + select(0u, 1u, t1_lo < ${K[i + 1]});
-      t1_lo = t1_lo + W[${(i + 1) & 0x1f}];
-      t1_hi = t1_hi + W[${i & 0x1f}] + select(0u, 1u, t1_lo < W[${(i + 1) & 0x1f}]);
+      t1_lo = t1_lo + acc_lo;
+      t1_hi = t1_hi + acc_hi + select(0u, 1u, t1_lo < acc_lo);
       tmp = ((alo >> 28) | (ahi << 4)) ^ ((ahi >> 2) | (alo << 30)) ^ ((ahi >> 7) | (alo << 25));
       t2_lo = tmp + ((alo & blo) ^ (alo & clo) ^ (blo & clo));
       t2_hi = (((ahi >> 28) | (alo << 4)) ^ ((alo >> 2) | (ahi << 30)) ^ ((alo >> 7) | (ahi << 25))) + ((ahi & bhi) ^ (ahi & chi) ^ (bhi & chi)) + select(0u, 1u, t2_lo < tmp);
       dlo += t1_lo;
       dhi += t1_hi + select(0u, 1u, dlo < t1_lo);
       hlo = t1_lo + t2_lo;
-      hhi = t1_hi + t2_hi + select(0u, 1u, hlo < t1_lo);`
+      hhi = t1_hi + t2_hi + select(0u, 1u, hlo < t1_lo);`+(i < 156 ? `
+      W[${(i + 1) & 0x1f}] = acc_lo;
+      W[${i & 0x1f}] = acc_hi;` : '')
   };
 
   function rollX(snippet, x) {
@@ -908,7 +900,7 @@ function unrolledSha512mask_wgpu(template) {
 
   var MAIN_ROUNDS = ''
   for (let i = 32; i < 160; i+=2) {
-    MAIN_ROUNDS += rollX(snippet(i), i / 2)
+    MAIN_ROUNDS += rollX(mainLoopOps(i), i / 2)
   }
   template = template.replaceAll('INIT_ROUNDS', INIT_ROUNDS).replaceAll('MAIN_ROUNDS', MAIN_ROUNDS)
 

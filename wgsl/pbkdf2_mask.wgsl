@@ -334,26 +334,8 @@ fn sha512_unrolled(W: ptr<function, array<u32, 32>>, IV: ptr<function, array<u32
 }
 
 fn sha512(inp: ptr<function, array<u32, 32>>, IV: ptr<function, array<u32, 16>>) {
-  var W: array<u32, 160>;
+  var W: array<u32, 32>;
   for (var i: u32 =  0u; i <  32u; i = i + 1u) { W[i] = inp[i]; }
-  for (var i: u32 = 32u; i < 160u; i = i + 2u) {
-      var xhi = W[i - 4];
-      var xlo = W[i - 3];
-      let t1_hi = ((xhi >> 19) | (xlo << 13)) ^ ((xlo >> 29) | (xhi << 3)) ^ (xhi >> 6);
-      let t1_lo = ((xlo >> 19) | (xhi << 13)) ^ ((xhi >> 29) | (xlo << 3)) ^ ((xlo >> 6) | (xhi << 26));
-      xhi = W[i - 30];
-      xlo = W[i - 29];
-      let t3_hi = ((xhi >> 1) | (xlo << 31)) ^ ((xhi >> 8) | (xlo << 24)) ^ (xhi >> 7);
-      let t3_lo = ((xlo >> 1) | (xhi << 31)) ^ ((xlo >> 8) | (xhi << 24)) ^ ((xlo >> 7) | (xhi << 25));
-      var acc_lo = W[i - 13] + W[i - 31];
-      var acc_hi = W[i - 14] + W[i - 32] + select(0u, 1u, acc_lo < W[i - 13]);
-      acc_lo = acc_lo + t1_lo;
-      acc_hi = acc_hi + t1_hi + select(0u, 1u, acc_lo < t1_lo);
-      acc_lo = acc_lo + t3_lo;
-      acc_hi = acc_hi + t3_hi + select(0u, 1u, acc_lo < t3_lo);
-      W[i] = acc_hi;
-      W[i + 1] = acc_lo;
-  }
 
   var ahi: u32 = IV[0];
   var alo: u32 = IV[1];
@@ -372,7 +354,7 @@ fn sha512(inp: ptr<function, array<u32, 32>>, IV: ptr<function, array<u32, 16>>)
   var hhi: u32 = IV[14];
   var hlo: u32 = IV[15];
 
-  for (var i: u32 = 0u; i < 160u; i = i + 2u) {
+  for (var i: u32 = 0u; i < 32u; i = i + 2u) {
       var t1_lo = hlo + (((elo >> 14) | (ehi << 18)) ^ ((elo >> 18) | (ehi << 14)) ^ ((ehi >> 9) | (elo << 23)));
       var t1_hi = hhi + (((ehi >> 14) | (elo << 18)) ^ ((ehi >> 18) | (elo << 14)) ^ ((elo >> 9) | (ehi << 23))) + select(0u, 1u, t1_lo < hlo);
       var tmp = (elo & flo) ^ ((~elo) & glo);
@@ -384,6 +366,55 @@ fn sha512(inp: ptr<function, array<u32, 32>>, IV: ptr<function, array<u32, 16>>)
       tmp = W[i + 1];
       t1_lo = t1_lo + tmp;
       t1_hi = t1_hi + W[i] + select(0u, 1u, t1_lo < tmp);
+      tmp = ((alo >> 28) | (ahi << 4)) ^ ((ahi >> 2) | (alo << 30)) ^ ((ahi >> 7) | (alo << 25));
+      let t2_lo = tmp + ((alo & blo) ^ (alo & clo) ^ (blo & clo));
+      let t2_hi = (((ahi >> 28) | (alo << 4)) ^ ((alo >> 2) | (ahi << 30)) ^ ((alo >> 7) | (ahi << 25))) + ((ahi & bhi) ^ (ahi & chi) ^ (bhi & chi)) + select(0u, 1u, t2_lo < tmp);
+      hhi = ghi;
+      hlo = glo;
+      ghi = fhi;
+      glo = flo;
+      fhi = ehi;
+      flo = elo;
+      elo = dlo + t1_lo;
+      ehi = dhi + t1_hi + select(0u, 1u, elo < t1_lo);
+      dhi = chi;
+      dlo = clo;
+      chi = bhi;
+      clo = blo;
+      bhi = ahi;
+      blo = alo;
+      alo = t1_lo + t2_lo;
+      ahi = t1_hi + t2_hi + select(0u, 1u, alo < t1_lo);
+  }
+
+  for (var i: u32 = 32u; i < 160u; i = i + 2u) {
+      var xhi = W[(i + 28) & 0x1f];
+      var xlo = W[(i + 29) & 0x1f];
+      let t4_hi = ((xhi >> 19) | (xlo << 13)) ^ ((xlo >> 29) | (xhi << 3)) ^ (xhi >> 6);
+      let t4_lo = ((xlo >> 19) | (xhi << 13)) ^ ((xhi >> 29) | (xlo << 3)) ^ ((xlo >> 6) | (xhi << 26));
+      xhi = W[(i + 2) & 0x1f];
+      xlo = W[(i + 3) & 0x1f];
+      let t3_hi = ((xhi >> 1) | (xlo << 31)) ^ ((xhi >> 8) | (xlo << 24)) ^ (xhi >> 7);
+      let t3_lo = ((xlo >> 1) | (xhi << 31)) ^ ((xlo >> 8) | (xhi << 24)) ^ ((xlo >> 7) | (xhi << 25));
+      var acc_lo = W[(i + 19) & 0x1f] + W[(i + 1) & 0x1f];
+      var acc_hi = W[(i + 18) & 0x1f] + W[i & 0x1f] + select(0u, 1u, acc_lo < W[(i + 19) & 0x1f]);
+      acc_lo = acc_lo + t4_lo;
+      acc_hi = acc_hi + t4_hi + select(0u, 1u, acc_lo < t4_lo);
+      acc_lo = acc_lo + t3_lo;
+      acc_hi = acc_hi + t3_hi + select(0u, 1u, acc_lo < t3_lo);
+      W[i & 0x1f] = acc_hi;
+      W[(i + 1) & 0x1f] = acc_lo;
+
+      var t1_lo = hlo + (((elo >> 14) | (ehi << 18)) ^ ((elo >> 18) | (ehi << 14)) ^ ((ehi >> 9) | (elo << 23)));
+      var t1_hi = hhi + (((ehi >> 14) | (elo << 18)) ^ ((ehi >> 18) | (elo << 14)) ^ ((elo >> 9) | (ehi << 23))) + select(0u, 1u, t1_lo < hlo);
+      var tmp = (elo & flo) ^ ((~elo) & glo);
+      t1_lo = t1_lo + tmp;
+      t1_hi = t1_hi + ((ehi & fhi) ^ ((~ehi) & ghi)) + select(0u, 1u, t1_lo < tmp);
+      tmp = K[i + 1];
+      t1_lo = t1_lo + tmp;
+      t1_hi = t1_hi + K[i] + select(0u, 1u, t1_lo < tmp);
+      t1_lo = t1_lo + acc_lo;
+      t1_hi = t1_hi + acc_hi + select(0u, 1u, t1_lo < acc_lo);
       tmp = ((alo >> 28) | (ahi << 4)) ^ ((ahi >> 2) | (alo << 30)) ^ ((ahi >> 7) | (alo << 25));
       let t2_lo = tmp + ((alo & blo) ^ (alo & clo) ^ (blo & clo));
       let t2_hi = (((ahi >> 28) | (alo << 4)) ^ ((alo >> 2) | (ahi << 30)) ^ ((alo >> 7) | (ahi << 25))) + ((ahi & bhi) ^ (ahi & chi) ^ (bhi & chi)) + select(0u, 1u, t2_lo < tmp);
@@ -588,17 +619,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   for (var i = 0; i < 16; i += 1) { dk[i] = tmp_buf[i]; }
 
   for (var k = 1; k < 2048; k++) {
-
-      tmp_buf[16] = 0x80000000;
-      for (var i = 17; i < 31; i += 1) { tmp_buf[i] = 0; }
-      tmp_buf[31] = 192 * 8;
       sha512_unrolled(&tmp_buf, &seed1);
-
-      tmp_buf[16] = 0x80000000;
-      for (var i = 17; i < 31; i += 1) { tmp_buf[i] = 0; }
-      tmp_buf[31] = 192 * 8;
       sha512_unrolled(&tmp_buf, &seed2);
-      
       for (var i = 0; i < 16; i += 1) { dk[i] ^= tmp_buf[i]; }
   }
   for (var i: u32 = 0; i < 16; i += 1) {
