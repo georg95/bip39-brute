@@ -38,6 +38,13 @@
     <pre id="output"></pre>
 </body>
 <script>
+    async function test() {
+        let pbkdf2Code = (await fetch('wgsl/pbkdf2_password.wgsl').then(r => r.text()))
+        pbkdf2Code = (await unrolledSha512_wgpu(pbkdf2Code, 'expose census trophy review common rebel ask depend build caught frame accident naive shiver inmate host assault fan tonight accident left useful tongue blood'))
+            .replaceAll('WORKGROUP_SIZE', '64')
+    }
+    test()
+
 window.benchmark.onclick = async () => {
     assert(window.isSecureContext, 'WebGPU disabled for http:// protocol, works only on https://')
     assert(navigator.gpu, 'Browser not support WebGPU')
@@ -126,7 +133,7 @@ const TESTS = {
         } }
     },
     'pbkdf2': async function ({ passwords, MNEMONIC, WORKGROUP_SIZE }, gpu) {
-        let pbkdf2Code = (await fetch('wgsl/pbkdf2_template.wgsl').then(r => r.text()))
+        let pbkdf2Code = (await fetch('wgsl/pbkdf2_password.wgsl').then(r => r.text()))
         pbkdf2Code = (await unrolledSha512_wgpu(pbkdf2Code, MNEMONIC))
             .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
         const shaders = [await gpu.buildShader(pbkdf2Code, 'main', WORKGROUP_SIZE)]
@@ -182,7 +189,7 @@ async function runBenchmark(options) {
     const WORKGROUP_SIZE = 64
     const gpu = await webGPUinit({...options, BUF_SIZE: passwords*128 })
 
-    for (let mode of ['pbkdf2-mask']) {
+    for (let mode of ['pbkdf2']) {
         log(`\n${mode}:`);
         const { inp, check, shaders } = await TESTS[mode]({ passwords, MNEMONIC, WORKGROUP_SIZE }, gpu);
         await new Promise(res => setTimeout(res, 100)) // flush text

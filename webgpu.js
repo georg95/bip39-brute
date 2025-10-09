@@ -168,7 +168,7 @@ async function webGPUinit({ SAVED_PROGRESS, BUF_SIZE, adapter, device }) {
           swapBuffers()
         } else {
           progress('pbkdf2');
-          let pbkdf2Code = (await fetch('wgsl/pbkdf2_template.wgsl').then(r => r.text()))
+          let pbkdf2Code = (await fetch('wgsl/pbkdf2_password.wgsl').then(r => r.text()))
           pbkdf2Code = (await unrolledSha512_wgpu(pbkdf2Code, MNEMONIC))
               .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
           // unrolled code
@@ -639,56 +639,206 @@ function log(text, clear=false) {
 }
 
 async function unrolledSha512_wgpu(template, MNEMONIC) {
-  var snippet0 = (i) => `
-      t1_lo = hlo + (((elo >> 14) | (ehi << 18)) ^ ((elo >> 18) | (ehi << 14)) ^ ((ehi >> 9) | (elo << 23)));
-      t1_hi = hhi + (((ehi >> 14) | (elo << 18)) ^ ((ehi >> 18) | (elo << 14)) ^ ((elo >> 9) | (ehi << 23))) + select(0u, 1u, t1_lo < hlo);
-      tmp = (elo & flo) ^ ((~elo) & glo);
-      t1_lo = t1_lo + tmp;
-      t1_hi = t1_hi + ((ehi & fhi) ^ ((~ehi) & ghi)) + select(0u, 1u, t1_lo < tmp);
-      t1_lo = t1_lo + K[${i + 1}];
-      t1_hi = t1_hi + K[${i}] + select(0u, 1u, t1_lo < K[${i + 1}]);
-      t1_lo = t1_lo + W[${i + 1}];
-      t1_hi = t1_hi + W[${i}] + select(0u, 1u, t1_lo < W[${i + 1}]);
-      tmp = ((alo >> 28) | (ahi << 4)) ^ ((ahi >> 2) | (alo << 30)) ^ ((ahi >> 7) | (alo << 25));
-      t2_lo = tmp + ((alo & blo) ^ (alo & clo) ^ (blo & clo));
-      t2_hi = (((ahi >> 28) | (alo << 4)) ^ ((alo >> 2) | (ahi << 30)) ^ ((alo >> 7) | (ahi << 25))) + ((ahi & bhi) ^ (ahi & chi) ^ (bhi & chi)) + select(0u, 1u, t2_lo < tmp);
-      dlo += t1_lo;
-      dhi += t1_hi + select(0u, 1u, dlo < t1_lo);
-      hlo = t1_lo + t2_lo;
-      hhi = t1_hi + t2_hi + select(0u, 1u, hlo < t1_lo);`;
+  const W_INITIAL = Array(32).fill(null)
+  W_INITIAL[16] = 0x80000000;
+  for (var i = 17; i < 31; i += 1) { W_INITIAL[i] = 0; }
+  W_INITIAL[31] = 192 * 8;
+  const K = [
+    0x428a2f98, 0xd728ae22, 0x71374491, 0x23ef65cd, 0xb5c0fbcf, 0xec4d3b2f, 0xe9b5dba5, 0x8189dbbc,
+    0x3956c25b, 0xf348b538, 0x59f111f1, 0xb605d019, 0x923f82a4, 0xaf194f9b, 0xab1c5ed5, 0xda6d8118,
+    0xd807aa98, 0xa3030242, 0x12835b01, 0x45706fbe, 0x243185be, 0x4ee4b28c, 0x550c7dc3, 0xd5ffb4e2,
+    0x72be5d74, 0xf27b896f, 0x80deb1fe, 0x3b1696b1, 0x9bdc06a7, 0x25c71235, 0xc19bf174, 0xcf692694,
+    0xe49b69c1, 0x9ef14ad2, 0xefbe4786, 0x384f25e3, 0xfc19dc6,  0x8b8cd5b5, 0x240ca1cc, 0x77ac9c65,
+    0x2de92c6f, 0x592b0275, 0x4a7484aa, 0x6ea6e483, 0x5cb0a9dc, 0xbd41fbd4, 0x76f988da, 0x831153b5,
+    0x983e5152, 0xee66dfab, 0xa831c66d, 0x2db43210, 0xb00327c8, 0x98fb213f, 0xbf597fc7, 0xbeef0ee4,
+    0xc6e00bf3, 0x3da88fc2, 0xd5a79147, 0x930aa725, 0x6ca6351,  0xe003826f, 0x14292967, 0xa0e6e70,
+    0x27b70a85, 0x46d22ffc, 0x2e1b2138, 0x5c26c926, 0x4d2c6dfc, 0x5ac42aed, 0x53380d13, 0x9d95b3df,
+    0x650a7354, 0x8baf63de, 0x766a0abb, 0x3c77b2a8, 0x81c2c92e, 0x47edaee6, 0x92722c85, 0x1482353b,
+    0xa2bfe8a1, 0x4cf10364, 0xa81a664b, 0xbc423001, 0xc24b8b70, 0xd0f89791, 0xc76c51a3, 0x654be30,
+    0xd192e819, 0xd6ef5218, 0xd6990624, 0x5565a910, 0xf40e3585, 0x5771202a, 0x106aa070, 0x32bbd1b8,
+    0x19a4c116, 0xb8d2d0c8, 0x1e376c08, 0x5141ab53, 0x2748774c, 0xdf8eeb99, 0x34b0bcb5, 0xe19b48a8,
+    0x391c0cb3, 0xc5c95a63, 0x4ed8aa4a, 0xe3418acb, 0x5b9cca4f, 0x7763e373, 0x682e6ff3, 0xd6b2b8a3,
+    0x748f82ee, 0x5defb2fc, 0x78a5636f, 0x43172f60, 0x84c87814, 0xa1f0ab72, 0x8cc70208, 0x1a6439ec,
+    0x90befffa, 0x23631e28, 0xa4506ceb, 0xde82bde9, 0xbef9a3f7, 0xb2c67915, 0xc67178f2, 0xe372532b,
+    0xca273ece, 0xea26619c, 0xd186b8c7, 0x21c0c207, 0xeada7dd6, 0xcde0eb1e, 0xf57d4f7f, 0xee6ed178,
+    0x6f067aa,  0x72176fba, 0xa637dc5,  0xa2c898a6, 0x113f9804, 0xbef90dae, 0x1b710b35, 0x131c471b,
+    0x28db77f5, 0x23047d84, 0x32caab7b, 0x40c72493, 0x3c9ebe0a, 0x15c9bebc, 0x431d67c4, 0x9c100d4c,
+    0x4cc5d4be, 0xcb3e42b6, 0x597f299c, 0xfc657e2a, 0x5fcb6fab, 0x3ad6faec, 0x6c44198c, 0x4a475817]
 
-  var snippet = (i) => {
+  var initBuffer = (i, cache) => {
+    function setV(name) {
+      return cache[name] != null ? '0x'+cache[name].toString(16)+'u' : name
+    }
+    function remCache(vars) {
+      vars.forEach(v => { delete cache[v] })
+    }
+
+    function setInitCode(varL, varH, parts) {
+      const constPart = parts.filter(({ valid }) => valid).reduce((acc, x) => {
+        var lo = (acc.lo + x.lo) >>> 0
+        var hi = (acc.hi + x.hi + (lo < acc.lo ? 1 : 0)) >>> 0
+        return { lo, hi }
+      }, { lo: 0, hi: 0 })
+      const varParts = parts.filter(({ valid }) => !valid)
+      if (varParts.length === 0) {
+        return { code: '', lo: '0x'+constPart.lo.toString(16), hi: '0x'+constPart.hi.toString(16) }
+      }
+      var initCode = `
+          ${varL} = ${'0x'+constPart.lo.toString(16)} + ${varParts[0].lo_s};
+          ${varH} = ${'0x'+constPart.hi.toString(16)} + ${varParts[0].hi_s} + select(0u, 1u, ${varL} < ${'0x'+constPart.lo.toString(16)});`
+      if (constPart.lo === 0 && constPart.hi === 0) {
+        initCode = `
+          ${varL} = ${varParts[0].lo_s};
+          ${varH} = ${varParts[0].hi_s};`
+      
+      }
+      for (let { lo_s, hi_s } of varParts.slice(1)) {
+        if (lo_s.length <= 5) {
+          initCode += `
+          ${varL} += ${lo_s};
+          ${varH} += ${hi_s} + select(0u, 1u, ${varL} < ${lo_s});`
+        } else {
+          initCode += `
+          tmp = ${lo_s};
+          ${varL} += tmp;
+          ${varH} += ${hi_s} + select(0u, 1u, ${varL} < tmp);`
+        }
+      }
+      return { code: initCode, lo: varL, hi: varH }
+    }
+
+    const { alo, ahi, blo, bhi, clo, chi, dlo, dhi, elo, ehi, hlo, hhi, glo, ghi, flo, fhi } = cache;
+    var t1Parts = [
+      {
+        valid: elo != null,
+        lo: (((elo >>> 14) | (ehi << 18)) ^ ((elo >>> 18) | (ehi << 14)) ^ ((ehi >>> 9) | (elo << 23))) >>> 0,
+        hi: (((ehi >>> 14) | (elo << 18)) ^ ((ehi >>> 18) | (elo << 14)) ^ ((elo >>> 9) | (ehi << 23))) >>> 0,
+        lo_s: '(((elo >> 14) | (ehi << 18)) ^ ((elo >> 18) | (ehi << 14)) ^ ((ehi >> 9) | (elo << 23)))',
+        hi_s: '(((ehi >> 14) | (elo << 18)) ^ ((ehi >> 18) | (elo << 14)) ^ ((elo >> 9) | (ehi << 23)))'
+      },
+      {
+        valid: elo != null && flo != null && glo != null,
+        lo: ((elo & flo) ^ ((~elo) & glo)) >>> 0,
+        hi: ((ehi & fhi) ^ ((~ehi) & ghi)) >>> 0,
+        lo_s: `((${setV('elo')} & ${setV('flo')}) ^ ((~${setV('elo')}) & ${setV('glo')}))`,
+        hi_s: `((${setV('ehi')} & ${setV('fhi')}) ^ ((~${setV('ehi')}) & ${setV('ghi')}))`
+      },
+      { valid: W_INITIAL[i] != null, lo: W_INITIAL[i + 1], hi: W_INITIAL[i], lo_s: `W[${i+1}]`, hi_s: `W[${i}]` },
+      { valid: hlo != null, lo: hlo, hi: hhi, lo_s: 'hlo', hi_s: 'hhi' },
+      { valid: true, lo: K[i + 1], hi: K[i] },
+    ]
+    var t2Parts = [
+      {
+        valid: alo != null,
+        lo: (((alo >>> 28) | (ahi << 4)) ^ ((ahi >>> 2) | (alo << 30)) ^ ((ahi >>> 7) | (alo << 25))) >>> 0,
+        hi: (((ahi >>> 28) | (alo << 4)) ^ ((alo >>> 2) | (ahi << 30)) ^ ((alo >>> 7) | (ahi << 25))) >>> 0,
+        lo_s: '(((alo >> 28) | (ahi << 4)) ^ ((ahi >> 2) | (alo << 30)) ^ ((ahi >> 7) | (alo << 25)))',
+        hi_s: '(((ahi >> 28) | (alo << 4)) ^ ((alo >> 2) | (ahi << 30)) ^ ((alo >> 7) | (ahi << 25)))'
+      },
+      {
+        valid: alo != null && blo != null && clo != null,
+        lo: ((alo & blo) ^ (alo & clo) ^ (blo & clo)) >>> 0,
+        hi: ((ahi & bhi) ^ (ahi & chi) ^ (bhi & chi)) >>> 0,
+        lo_s: `((${setV('alo')} & ${setV('blo')}) ^ (${setV('alo')} & ${setV('clo')}) ^ (${setV('blo')} & ${setV('clo')}))`,
+        hi_s: `((${setV('ahi')} & ${setV('bhi')}) ^ (${setV('ahi')} & ${setV('chi')}) ^ (${setV('bhi')} & ${setV('chi')}))`
+      },
+    ]
+    
+    var { code: t1Init } = setInitCode('t1_lo', 't1_hi', t1Parts)
+    var { code: t2Init, lo: t2lo, hi: t2hi } = setInitCode('t2_lo', 't2_hi', t2Parts)
+
+    remCache(['dlo', 'dhi', 'hlo', 'hhi'])
+    return t1Init + t2Init + `
+      dlo = ${dlo != null ? '0x'+dlo.toString(16) : 'dlo'} + t1_lo;
+      dhi = ${dhi != null ? '0x'+dhi.toString(16) : 'dhi'} + t1_hi + select(0u, 1u, dlo < t1_lo);
+      hlo = t1_lo + ${t2lo};
+      hhi = t1_hi + ${t2hi} + select(0u, 1u, hlo < t1_lo);`;
+  };
+
+  function shr({ hi, lo }) {
+    return {
+      hi: (((hi >>> 19) | (lo << 13)) ^ ((lo >>> 29) | (hi << 3)) ^ (hi >>> 6)) >>> 0,
+      lo: (((lo >>> 19) | (hi << 13)) ^ ((hi >>> 29) | (lo << 3)) ^ ((lo >>> 6) | (hi << 26))) >>> 0,
+    }   
+  }
+  function shr2({ hi, lo }) {
+    return {
+      hi: (((hi >>> 1) | (lo << 31)) ^ ((hi >>> 8) | (lo << 24)) ^ (hi >>> 7)) >>> 0,
+      lo: (((lo >>> 1) | (hi << 31)) ^ ((lo >>> 8) | (hi << 24)) ^ ((lo >>> 7) | (hi << 25))) >>> 0
+    }
+  }
+
+  var mainLoopOps = (i) => {
+    let t1const = { lo_s: 't1_lo', hi_s: 't1_hi' }
+    let t2const = { lo_s: 't2_lo', hi_s: 't2_hi' }
+    let w1const = { lo_s: `W[${(i + 19) & 0x1f}]`, hi_s: `W[${(i + 18) & 0x1f}]` }
+    let w2const = { lo_s: `W[${(i + 1) & 0x1f}]`, hi_s: `W[${i & 0x1f}]` }
+    if (W_INITIAL[(i + 28) & 0x1f] !== null && W_INITIAL[(i + 29) & 0x1f] !== null) {
+      t1const = { ...t1const, ...shr({ hi: W_INITIAL[(i + 28) & 0x1f], lo: W_INITIAL[(i + 29) & 0x1f] }) }
+    }
+    if (W_INITIAL[(i + 2) & 0x1f] !== null && W_INITIAL[(i + 3) & 0x1f] !== null) {
+      t2const = { ...t2const, ...shr2({ hi: W_INITIAL[(i + 2) & 0x1f], lo: W_INITIAL[(i + 3) & 0x1f] }) }
+    }
+    if (W_INITIAL[(i + 19) & 0x1f] !== null && W_INITIAL[(i + 18) & 0x1f] !== null) {
+      w1const = { ...w1const, lo: W_INITIAL[(i + 19) & 0x1f], hi: W_INITIAL[(i + 18) & 0x1f] }
+    }
+    if (W_INITIAL[(i + 1) & 0x1f] !== null && W_INITIAL[i & 0x1f] !== null) {
+      w2const = { ...w2const, lo: W_INITIAL[(i + 1) & 0x1f], hi: W_INITIAL[i & 0x1f] }
+    }
+    var addition = ''
+    {
+      var components = [t1const, t2const, w1const, w2const]
+      var lo = 0
+      var hi = 0
+      for (let comp of components) {
+        if (comp.lo != null) {
+          lo = (lo + comp.lo) % 0x100000000 
+          hi = (hi + comp.hi + (lo < comp.lo ? 1 : 0)) % 0x100000000 
+        }
+      }
+      components = [w1const, w2const, t1const, t2const].filter(x => x.lo == null)
+      addition = `\nacc_lo = ${components[0].lo_s} + ${lo};\n`
+      addition += `acc_hi = ${components[0].hi_s} + ${hi ? `${hi} + ` : ''}select(0u, 1u, acc_lo < ${lo});\n`
+      if (lo === 0) {
+        addition = `\nacc_lo = ${components[0].lo_s} + ${components[1].lo_s};\n`
+        addition += `acc_hi = ${components[0].hi_s} + ${components[1].hi_s} + ${hi ? `${hi} + ` : ''}select(0u, 1u, acc_lo < ${components[0].lo_s});\n`
+      }
+      for (let { lo_s, hi_s } of components.slice(lo === 0 ? 2 : 1)) {
+        addition += `acc_lo += ${lo_s};\n`
+        addition += `acc_hi += ${hi_s} + select(0u, 1u, acc_lo < ${lo_s});\n`
+      }
+    }
+    W_INITIAL[(i + 1) & 0x1f] = null
+    W_INITIAL[i & 0x1f] = null
     var xhi1 = `W[${(i + 28) & 0x1f}]`
     var xlo1 = `W[${(i + 29) & 0x1f}]`
     var xhi2 = `W[${(i + 2) & 0x1f}]`
     var xlo2 = `W[${(i + 3) & 0x1f}]`
-    return `
-      t1_lo = ((${xhi1} >> 19) | (${xlo1} << 13)) ^ ((${xlo1} >> 29) | (${xhi1} << 3)) ^ (${xhi1} >> 6);
-      t1_hi = ((${xlo1} >> 19) | (${xhi1} << 13)) ^ ((${xhi1} >> 29) | (${xlo1} << 3)) ^ ((${xlo1} >> 6) | (${xhi1} << 26));
+    return (t1const.lo == null ? `
+      t1_hi = ((${xhi1} >> 19) | (${xlo1} << 13)) ^ ((${xlo1} >> 29) | (${xhi1} << 3)) ^ (${xhi1} >> 6);
+      t1_lo = ((${xlo1} >> 19) | (${xhi1} << 13)) ^ ((${xhi1} >> 29) | (${xlo1} << 3)) ^ ((${xlo1} >> 6) | (${xhi1} << 26));` : '') +
+      (t2const.lo == null ? `
       t2_hi = ((${xhi2} >> 1) | (${xlo2} << 31)) ^ ((${xhi2} >> 8) | (${xlo2} << 24)) ^ (${xhi2} >> 7);
-      t2_lo = ((${xlo2} >> 1) | (${xhi2} << 31)) ^ ((${xlo2} >> 8) | (${xhi2} << 24)) ^ ((${xlo2} >> 7) | (${xhi2} << 25));
-      acc_lo = W[${(i + 19) & 0x1f}] + W[${(i + 1) & 0x1f}];
-      acc_hi = W[${(i + 18) & 0x1f}] + W[${i & 0x1f}] + select(0u, 1u, acc_lo < W[${(i + 19) & 0x1f}]);
-      acc_lo = acc_lo + t1_hi;
-      acc_hi = acc_hi + t1_lo + select(0u, 1u, acc_lo < t1_hi);
-      W[${(i + 1) & 0x1f}] = acc_lo + t2_lo;
-      W[${i & 0x1f}] = acc_hi + t2_hi + select(0u, 1u, W[${(i + 1) & 0x1f}] < t2_lo);
+      t2_lo = ((${xlo2} >> 1) | (${xhi2} << 31)) ^ ((${xlo2} >> 8) | (${xhi2} << 24)) ^ ((${xlo2} >> 7) | (${xhi2} << 25));` : '')
+      + addition + `
       t1_lo = hlo + (((elo >> 14) | (ehi << 18)) ^ ((elo >> 18) | (ehi << 14)) ^ ((ehi >> 9) | (elo << 23)));
       t1_hi = hhi + (((ehi >> 14) | (elo << 18)) ^ ((ehi >> 18) | (elo << 14)) ^ ((elo >> 9) | (ehi << 23))) + select(0u, 1u, t1_lo < hlo);
       tmp = (elo & flo) ^ ((~elo) & glo);
       t1_lo = t1_lo + tmp;
       t1_hi = t1_hi + ((ehi & fhi) ^ ((~ehi) & ghi)) + select(0u, 1u, t1_lo < tmp);
-      t1_lo = t1_lo + K[i + ${i + 1}];
-      t1_hi = t1_hi + K[i + ${i}] + select(0u, 1u, t1_lo < K[i + ${i + 1}]);
-      t1_lo = t1_lo + W[${(i + 1) & 0x1f}];
-      t1_hi = t1_hi + W[${i & 0x1f}] + select(0u, 1u, t1_lo < W[${(i + 1) & 0x1f}]);
+      t1_lo = t1_lo + ${K[i + 1]};
+      t1_hi = t1_hi + ${K[i]} + select(0u, 1u, t1_lo < ${K[i + 1]});
+      t1_lo = t1_lo + acc_lo;
+      t1_hi = t1_hi + acc_hi + select(0u, 1u, t1_lo < acc_lo);
       tmp = ((alo >> 28) | (ahi << 4)) ^ ((ahi >> 2) | (alo << 30)) ^ ((ahi >> 7) | (alo << 25));
       t2_lo = tmp + ((alo & blo) ^ (alo & clo) ^ (blo & clo));
       t2_hi = (((ahi >> 28) | (alo << 4)) ^ ((alo >> 2) | (ahi << 30)) ^ ((alo >> 7) | (ahi << 25))) + ((ahi & bhi) ^ (ahi & chi) ^ (bhi & chi)) + select(0u, 1u, t2_lo < tmp);
       dlo += t1_lo;
       dhi += t1_hi + select(0u, 1u, dlo < t1_lo);
       hlo = t1_lo + t2_lo;
-      hhi = t1_hi + t2_hi + select(0u, 1u, hlo < t1_lo);`
+      hhi = t1_hi + t2_hi + select(0u, 1u, hlo < t1_lo);`+(i < 156 ? `
+      W[${(i + 1) & 0x1f}] = acc_lo;
+      W[${i & 0x1f}] = acc_hi;` : '')
   };
 
   function rollX(snippet, x) {
@@ -707,29 +857,58 @@ async function unrolledSha512_wgpu(template, MNEMONIC) {
     return curS
   }
 
-  var INIT_ROUNDS = ''
+  function rollCache(cache) {
+    const letters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+    cache['XXXXhi'] = cache['hhi']
+    cache['XXXXlo'] = cache['hlo']
+    let lettersRev = letters.slice(0, letters.length - 1)
+    lettersRev.reverse()
+    for (let letter of lettersRev) {
+      const next = letters[letters.indexOf(letter) + 1]
+      cache[next+'hi'] = cache[letter+'hi']
+      cache[next+'lo'] = cache[letter+'lo']
+    }
+    cache['ahi'] = cache['XXXXhi']
+    cache['alo'] = cache['XXXXlo']
+  }
+
+  const seed1 = Array.from(await sha512round(MNEMONIC, 0x36))
+  const seed2 = Array.from(await sha512round(MNEMONIC, 0x5c))
+
+  var cache = {};
+  ['ahi','alo','bhi','blo','chi','clo','dhi','dlo','ehi','elo','fhi','flo','ghi','glo','hhi','hlo'].forEach((v, i) => {
+    cache[v] = seed1[i]
+  })
+  var INIT_ROUNDS1 = ''
   for (let i = 0; i < 32; i+=2) {
-    INIT_ROUNDS += rollX(snippet0(i), i / 2)
+    INIT_ROUNDS1 += rollX(initBuffer(i, cache), i / 2)
+    rollCache(cache)
+  }
+  ['ahi','alo','bhi','blo','chi','clo','dhi','dlo','ehi','elo','fhi','flo','ghi','glo','hhi','hlo'].forEach((v, i) => {
+    cache[v] = seed2[i]
+  })
+  var INIT_ROUNDS2 = ''
+  for (let i = 0; i < 32; i+=2) {
+    INIT_ROUNDS2 += rollX(initBuffer(i, cache), i / 2)
+    rollCache(cache)
   }
 
   var MAIN_ROUNDS = ''
-  for (let i = 0; i < 32; i+=2) {
-    MAIN_ROUNDS += rollX(snippet(i), i / 2)
+  for (let i = 32; i < 160; i+=2) {
+    MAIN_ROUNDS += rollX(mainLoopOps(i), i / 2)
   }
 
-  const seed1 = Array.from(await sha512round(MNEMONIC, 0x36)).map(x => '0x'+x.toString(16)+'u')
-  const seed2 = Array.from(await sha512round(MNEMONIC, 0x5c)).map(x => '0x'+x.toString(16)+'u')
 
   for (let i = 15; i >= 0; i--) {
-    template = template.replaceAll(`SEED1_${i}`, seed1[i]).replaceAll(`SEED2_${i}`, seed2[i])
+    template = template
+      .replaceAll(`SEED1_${i}`, '0x'+seed1[i].toString(16)+'u')
+      .replaceAll(`SEED2_${i}`, '0x'+seed2[i].toString(16)+'u')
   }
   template = template.replaceAll('INIT_BUF', Array(32).fill(0).map((_, i) => `var W${i} = buf[${i}];`).join(' '))
-
-  template = template.replaceAll('INIT_ROUNDS', INIT_ROUNDS).replaceAll('MAIN_ROUNDS', `
-    for (var i: u32 = 32u; i < 160u; i += 32u) {
-      ${MAIN_ROUNDS}
-    }
-  `)
+  template = template
+    .replaceAll('INIT_ROUNDS1', INIT_ROUNDS1)
+    .replaceAll('INIT_ROUNDS2', INIT_ROUNDS2)
+    .replaceAll('MAIN_ROUNDS', MAIN_ROUNDS)
 
   for (let i = 31; i >= 0; i--) {
     template = template.replaceAll(`W[${i}]`, `W${i}`)
