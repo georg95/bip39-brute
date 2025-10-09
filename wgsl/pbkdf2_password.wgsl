@@ -136,7 +136,7 @@ fn mainLoop(buf: array<u32, 32>, globalIndex: u32) {
   }
 }
 
-fn sha512(inp: ptr<function, array<u32, 32>>, IV: ptr<function, array<u32, 16>>) {
+fn sha512(inp: ptr<function, array<u32, 32>>, IV: array<u32, 16>) {
   var W: array<u32, 32>;
   for (var i: u32 =  0u; i <  32u; i = i + 1u) { W[i] = inp[i]; }
 
@@ -276,15 +276,12 @@ fn sha512(inp: ptr<function, array<u32, 32>>, IV: ptr<function, array<u32, 16>>)
 
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  var tmp_buf: array<u32, 32>;
-  initBuffer(&tmp_buf, gid.x);
-
-  var seed1 = array<u32, 16>(SEED1_0, SEED1_1, SEED1_2, SEED1_3, SEED1_4, SEED1_5, SEED1_6, SEED1_7, SEED1_8, SEED1_9, SEED1_10, SEED1_11, SEED1_12, SEED1_13, SEED1_14, SEED1_15);
-  sha512(&tmp_buf, &seed1);
-  var seed2 = array<u32, 16>(SEED2_0, SEED2_1, SEED2_2, SEED2_3, SEED2_4, SEED2_5, SEED2_6, SEED2_7, SEED2_8, SEED2_9, SEED2_10, SEED2_11, SEED2_12, SEED2_13, SEED2_14, SEED2_15);
-  for (var i = 16; i < 32; i += 1) { tmp_buf[i] = 0; }
-  tmp_buf[16] = 0x80000000;
-  tmp_buf[31] = 192 * 8;
-  sha512(&tmp_buf, &seed2);
-  mainLoop(tmp_buf, gid.x);
+  var main_buf: array<u32, 32>;
+  initBuffer(&main_buf, gid.x);
+  sha512(&main_buf, array<u32, 16>(SEED1_0, SEED1_1, SEED1_2, SEED1_3, SEED1_4, SEED1_5, SEED1_6, SEED1_7, SEED1_8, SEED1_9, SEED1_10, SEED1_11, SEED1_12, SEED1_13, SEED1_14, SEED1_15));
+  for (var i = 16; i < 32; i += 1) { main_buf[i] = 0; }
+  main_buf[16] = 0x80000000;
+  main_buf[31] = 192 * 8;
+  sha512(&main_buf, array<u32, 16>(SEED2_0, SEED2_1, SEED2_2, SEED2_3, SEED2_4, SEED2_5, SEED2_6, SEED2_7, SEED2_8, SEED2_9, SEED2_10, SEED2_11, SEED2_12, SEED2_13, SEED2_14, SEED2_15));
+  mainLoop(main_buf, gid.x);
 }
