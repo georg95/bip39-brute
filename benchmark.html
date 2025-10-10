@@ -213,7 +213,7 @@ async function runBenchmark(options) {
     const WORKGROUP_SIZE = 64
     const gpu = await webGPUinit({...options, BUF_SIZE: passwords*128 })
 
-    for (let mode in TESTS) {
+    for (let mode of ['pbkdf2-hmac-sha512\n2048 iterations\nmask mode']) {
         let maxSpeed = 0, spinner = 0
         const tr = document.getElementById(mode)
         const start = performance.now()
@@ -225,7 +225,7 @@ async function runBenchmark(options) {
         tr.childNodes[1].innerText = `${(((performance.now() - start) / 1000).toFixed(1))}s`
         await new Promise(res => setTimeout(res, 100)) // flush text
         
-        for (let i = 0; i < 13; i++) {
+        for (let i = 0; i < 12; i++) {
             let batchSize = 64 * (2 ** i), time = Infinity, out;
             tr.childNodes[2].innerText = batchSize
             for (let x = 0; x < 3; x++) {

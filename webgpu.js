@@ -905,7 +905,7 @@ async function unrolledSha512_wgpu(template, MNEMONIC) {
       .replaceAll(`SEED1_${i}`, '0x'+seed1[i].toString(16)+'u')
       .replaceAll(`SEED2_${i}`, '0x'+seed2[i].toString(16)+'u')
   }
-  template = template.replaceAll('INIT_BUF', Array(32).fill(0).map((_, i) => `var W${i} = buf[${i}];`).join(' '))
+  template = template.replaceAll('INIT_BUF', Array(32).fill(0).map((_, i) => `var W${i} = main_buf[${i}];`).join(' '))
   template = template
     .replaceAll('INIT_ROUNDS1', INIT_ROUNDS1)
     .replaceAll('INIT_ROUNDS2', INIT_ROUNDS2)
@@ -1082,7 +1082,15 @@ function unrolledSha512mask_wgpu(template) {
   for (let i = 32; i < 160; i+=2) {
     MAIN_ROUNDS += rollX(mainLoopOps(i), i / 2)
   }
-  template = template.replaceAll('INIT_ROUNDS', INIT_ROUNDS).replaceAll('MAIN_ROUNDS', MAIN_ROUNDS)
+  
+  template = template.replaceAll('INIT_BUF', Array(32).fill(0).map((_, i) => `var W${i} = main_buf[${i}];`).join(' '))
+  template = template
+    .replaceAll('INIT_ROUNDS', INIT_ROUNDS)
+    .replaceAll('MAIN_ROUNDS', MAIN_ROUNDS)
+
+  for (let i = 31; i >= 0; i--) {
+    template = template.replaceAll(`W[${i}]`, `W${i}`)
+  }
 
   return template
 }
