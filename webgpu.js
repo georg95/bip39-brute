@@ -403,6 +403,7 @@ async function webGPUinit({ SAVED_PROGRESS, BUF_SIZE, adapter, device }) {
           .replaceAll('PASS_LEN', (MNEMONIC_PASSWORD.length + 1).toString(10))
            // 1 character is stub because wgsl not allow 0-item arrays
           .replaceAll('PASSWORD__', ((MNEMONIC_PASSWORD+'_').split('').map(x => `${x.charCodeAt(0)}u`).join(', ')).toString(10))
+      pbkdf2Code = unrolledSha512mask_wgpu(pbkdf2Code)
       const module = device.createShaderModule({ code: pbkdf2Code })
       const shaderInfo = await module.getCompilationInfo()
       if (shaderInfo.messages?.length > 0) {
