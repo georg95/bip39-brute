@@ -241,7 +241,7 @@ async function runBenchmark(options) {
                 return
             }
 
-            if (time > 1.5) { break }
+            if (time > 1) { break }
         }
         tr.childNodes[3].innerText = `${(maxSpeed / 1000).toFixed(1)} kH/s`
     }
