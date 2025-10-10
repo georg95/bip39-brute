@@ -127,6 +127,6 @@ Known ethereum addresses:
 - [x] Save current settings & progress
 - [x] Links for recovery state
 - [x] Readme docs and examples
-- [ ] Better benchmarks
+- [x] Better benchmarks
 - [ ] Naming project
 - [ ] Optimize performance

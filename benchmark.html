@@ -32,9 +32,21 @@
         pre {
             text-wrap: auto;
         }
+        #bench_result {
+            width: 100%;
+            border: 1px solid bisque;
+            margin-top: 20px;
+        }
+        #bench_result th, #bench_result td {
+            padding: 10px;
+        }
     </style>
 <body>
     <button id="benchmark">Start benchmark</button>
+    <table id="bench_result">
+        <thead><th colspan="4" id="gpu_name"></th></thead>
+        <thead><th>mode</th><th>compilation</th><th>batch</th><th>speed</th></thead>
+    </table>
     <pre id="output"></pre>
 </body>
 <script>
@@ -59,11 +71,72 @@ window.benchmark.onclick = async () => {
     //     window.output.innerHTML += '\n'
     //     await runBenchmark({ device: device2, adapter: adapter2 })
     // }
-    log('\n✅ DONE')
+    log('✅ DONE')
     window.benchmark.style.display = ''
 }
 
 const TESTS = {
+
+    // 'solana': async function ({ passwords, WORKGROUP_SIZE }, gpu) {
+    //     let deriveCode = (await fetch('wgsl/derive_coin.wgsl').then(r => r.text()))
+    //             .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
+    //             .replaceAll('NETWORK', 44)
+    //             .replaceAll('COIN_TYPE', 501)
+    //             .replaceAll('ADDR_COUNT', `${1}u`)
+    //     const shaders = [await gpu.buildShader(deriveCode, 'deriveSolana', WORKGROUP_SIZE)]
+    //     const inp = new Uint32Array(16 * passwords)
+    //     const seed = hexToUint32Array('2177a1d6e983977c6b8e1b2214da6e61651d878d2c002024d086ee0e50626f0cf3890c740d8c425380397c61395ff2147d49d068be6a68d3e8b775e7a20c20ed')
+    //     for (let i = 0; i < passwords; i++) {
+    //         inp.set(seed, i * 16)
+    //     }
+    //     return { shaders, inp, check(out) {
+    //         return u32arrToHex(out.slice(0, 8)) === '09ffcb448f752fd52d656882451e24a80e4dbbbc0a71ec83b8d3d720503c3484'
+    //     } }
+    // },
+    'pbkdf2-hmac-sha512\n2048 iterations\npassword mode': async function ({ passwords, MNEMONIC, WORKGROUP_SIZE }, gpu) {
+        let pbkdf2Code = (await fetch('wgsl/pbkdf2_password.wgsl').then(r => r.text()))
+        pbkdf2Code = (await unrolledSha512_wgpu(pbkdf2Code, MNEMONIC))
+            .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
+        const shaders = [await gpu.buildShader(pbkdf2Code, 'main', WORKGROUP_SIZE)]
+        const PASSWORD = 'gauffers'
+        const digits = passwords.toString(10).length
+        const PASS_LEN = Math.ceil((PASSWORD.length + digits + 1) / 4) + 1
+        const inp = new Uint32Array(32 + PASS_LEN * passwords).fill(0)
+        var strbuf = new Uint8Array(inp.buffer, inp.byteOffset, inp.byteLength)
+
+        let passwordOffset = 128 + passwords * 4
+        for (let i = 0; i < passwords; i++) {
+            const curPass = PASSWORD + (i === 35 ? '' : i.toString(10)) + '\n'
+            strbuf.set(new TextEncoder().encode(curPass), passwordOffset)
+            inp[32 + i] = passwordOffset
+            passwordOffset += curPass.length
+        }
+        const MNEMONIC_SEED_0 = 'f3aef945a3078fcc058a7da12bcc37df8c0c075d80eac9ce9a5cd0e468fd29fb7401b8f787c4e47248ce529bfb1b34cee2c0ddb010cb0e169646b490e9e0ddf4'
+        const MNEMONIC_SEED_5 = '53ae6afed8bd85ad9b5603e14ac8e4930c900c3e97c94c6a3d74a6e112a30807a4cf1ad804065107242db26844d49b11ea15e73a2ae7d04358161e040e9f360f'
+
+        return { shaders, inp, check(out) {
+            return (u32arrToHex(out.slice(0, 16)) === MNEMONIC_SEED_0 && u32arrToHex(out.slice(80, 96)) === MNEMONIC_SEED_5)
+        } }
+    },
+    'pbkdf2-hmac-sha512\n2048 iterations\nmask mode': async function ({ passwords, WORKGROUP_SIZE }, gpu) {
+        const MNEMONIC_PASSWORD = ''
+        const MASK = 'chimney embody pulp lawsuit doctor diary hope gun motion coyote flip desert'
+        let pbkdf2Code = setPermutationsMask(MASK, (await fetch('wgsl/pbkdf2_mask.wgsl').then(r => r.text())))
+            .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))            
+            .replaceAll('WORD_COUNT', MASK.split(' ').length.toString(10))
+            .replaceAll('PASS_LEN', (MNEMONIC_PASSWORD.length + 1).toString(10))
+            // 1 character is stub because wgsl not allow 0-item arrays
+            .replaceAll('PASSWORD__', ((MNEMONIC_PASSWORD+'_').split('').map(x => `${x.charCodeAt(0)}u`).join(', ')).toString(10))
+        pbkdf2Code = unrolledSha512mask_wgpu(pbkdf2Code)
+        const shaders = [await gpu.buildShader(pbkdf2Code, 'main', WORKGROUP_SIZE)]
+        const inp = new Uint32Array(32).fill(0)
+        const MNEMONIC_SEED = '6e7f9c85c909c1f37e553ada9039cc705b73a441685db2468c8d2b8409fa9c14e27ad6c464b34485a820d18c3bc2cb78e31a9423af437d41ae4b0a26e94c695e'
+
+        return { shaders, inp, check(out) {
+            console.log('seed:', u32arrToHex(out.slice(0, 16)))
+            return (u32arrToHex(out.slice(0, 16)) === MNEMONIC_SEED)
+        } }
+    },
     'ed25519': async function ({ passwords, WORKGROUP_SIZE }, gpu) {
         await gpu.setEccTable('ed25519')
         var pkList = [base58Decode('HDxSyFTFenjCwLRg3VVdm3jD4zyTf1ZStcG1TmiQC6u9')]
@@ -97,66 +170,6 @@ const TESTS = {
             return u32arrToHex(out.slice(16, 32)) === 'b63e537acee9c54acaa717904221830ddb7b36a1545894c489165ed352538f57401934fe501d96447efbe1ddb4e5b831f6fe1c0b7239fc0de39b88700cebf64a'
         } }
     },
-    'solana': async function ({ passwords, WORKGROUP_SIZE }, gpu) {
-        let deriveCode = (await fetch('wgsl/derive_coin.wgsl').then(r => r.text()))
-                .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
-                .replaceAll('NETWORK', 44)
-                .replaceAll('COIN_TYPE', 501)
-                .replaceAll('ADDR_COUNT', `${1}u`)
-        const shaders = [await gpu.buildShader(deriveCode, 'deriveSolana', WORKGROUP_SIZE)]
-        const inp = new Uint32Array(16 * passwords)
-        const seed = hexToUint32Array('2177a1d6e983977c6b8e1b2214da6e61651d878d2c002024d086ee0e50626f0cf3890c740d8c425380397c61395ff2147d49d068be6a68d3e8b775e7a20c20ed')
-        for (let i = 0; i < passwords; i++) {
-            inp.set(seed, i * 16)
-        }
-        return { shaders, inp, check(out) {
-            return u32arrToHex(out.slice(0, 8)) === '09ffcb448f752fd52d656882451e24a80e4dbbbc0a71ec83b8d3d720503c3484'
-        } }
-    },
-    'pbkdf2-mask': async function ({ passwords, WORKGROUP_SIZE }, gpu) {
-        const MNEMONIC_PASSWORD = ''
-        const MASK = 'chimney embody pulp lawsuit doctor diary hope gun motion coyote flip desert'
-        let pbkdf2Code = setPermutationsMask(MASK, (await fetch('wgsl/pbkdf2_mask.wgsl').then(r => r.text())))
-            .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))            
-            .replaceAll('WORD_COUNT', MASK.split(' ').length.toString(10))
-            .replaceAll('PASS_LEN', (MNEMONIC_PASSWORD.length + 1).toString(10))
-            // 1 character is stub because wgsl not allow 0-item arrays
-            .replaceAll('PASSWORD__', ((MNEMONIC_PASSWORD+'_').split('').map(x => `${x.charCodeAt(0)}u`).join(', ')).toString(10))
-        pbkdf2Code = unrolledSha512mask_wgpu(pbkdf2Code)
-        const shaders = [await gpu.buildShader(pbkdf2Code, 'main', WORKGROUP_SIZE)]
-        const inp = new Uint32Array(32).fill(0)
-        const MNEMONIC_SEED = '6e7f9c85c909c1f37e553ada9039cc705b73a441685db2468c8d2b8409fa9c14e27ad6c464b34485a820d18c3bc2cb78e31a9423af437d41ae4b0a26e94c695e'
-
-        return { shaders, inp, check(out) {
-            console.log('seed:', u32arrToHex(out.slice(0, 16)))
-            return (u32arrToHex(out.slice(0, 16)) === MNEMONIC_SEED)
-        } }
-    },
-    'pbkdf2': async function ({ passwords, MNEMONIC, WORKGROUP_SIZE }, gpu) {
-        let pbkdf2Code = (await fetch('wgsl/pbkdf2_password.wgsl').then(r => r.text()))
-        pbkdf2Code = (await unrolledSha512_wgpu(pbkdf2Code, MNEMONIC))
-            .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
-        const shaders = [await gpu.buildShader(pbkdf2Code, 'main', WORKGROUP_SIZE)]
-        const PASSWORD = 'gauffers'
-        const digits = passwords.toString(10).length
-        const PASS_LEN = Math.ceil((PASSWORD.length + digits + 1) / 4) + 1
-        const inp = new Uint32Array(32 + PASS_LEN * passwords).fill(0)
-        var strbuf = new Uint8Array(inp.buffer, inp.byteOffset, inp.byteLength)
-
-        let passwordOffset = 128 + passwords * 4
-        for (let i = 0; i < passwords; i++) {
-            const curPass = PASSWORD + (i === 35 ? '' : i.toString(10)) + '\n'
-            strbuf.set(new TextEncoder().encode(curPass), passwordOffset)
-            inp[32 + i] = passwordOffset
-            passwordOffset += curPass.length
-        }
-        const MNEMONIC_SEED_0 = 'f3aef945a3078fcc058a7da12bcc37df8c0c075d80eac9ce9a5cd0e468fd29fb7401b8f787c4e47248ce529bfb1b34cee2c0ddb010cb0e169646b490e9e0ddf4'
-        const MNEMONIC_SEED_5 = '53ae6afed8bd85ad9b5603e14ac8e4930c900c3e97c94c6a3d74a6e112a30807a4cf1ad804065107242db26844d49b11ea15e73a2ae7d04358161e040e9f360f'
-
-        return { shaders, inp, check(out) {
-            return (u32arrToHex(out.slice(0, 16)) === MNEMONIC_SEED_0 && u32arrToHex(out.slice(80, 96)) === MNEMONIC_SEED_5)
-        } }
-    },
     'mnemonic to address': async function ({ passwords, MNEMONIC, WORKGROUP_SIZE }, gpu) {
         await gpu.setEccTable('secp256k1')
         const shaders = await gpu.prepareShaderPipeline({
@@ -181,24 +194,46 @@ const TESTS = {
     },
 }
 
+for (let mode in TESTS) {
+    const tr = document.createElement('tr')
+    tr.innerHTML = "<td></td><td></td><td></td><td></td>"
+    tr.id = mode
+    tr.childNodes[0].innerText = mode
+    tr.childNodes[1].innerText = '-'
+    tr.childNodes[2].innerText = '-'
+    tr.childNodes[3].innerText = '-'
+    window.bench_result.appendChild(tr)
+}
 
+const SPINNER = ['|', '/', '-', '\\']
 async function runBenchmark(options) {
-    log(`\n[${options.adapter.info.description || options.adapter.info.vendor}]\n`)
+    window.gpu_name.innerText = options.adapter.info.description || options.adapter.info.vendor
     const MNEMONIC = 'expose census trophy review common rebel ask depend build caught frame accident naive shiver inmate host assault fan tonight accident left useful tongue blood'
     const passwords = 1024 * 128
     const WORKGROUP_SIZE = 64
     const gpu = await webGPUinit({...options, BUF_SIZE: passwords*128 })
 
-    for (let mode of ['pbkdf2']) {
-        log(`\n${mode}:`);
+    for (let mode in TESTS) {
+        let maxSpeed = 0, spinner = 0
+        const tr = document.getElementById(mode)
+        const start = performance.now()
+        const compileShaderSpinner = setInterval(() => {
+            tr.childNodes[1].innerText = SPINNER[(spinner++)%SPINNER.length]
+        }, 250)
         const { inp, check, shaders } = await TESTS[mode]({ passwords, MNEMONIC, WORKGROUP_SIZE }, gpu);
+        clearInterval(compileShaderSpinner);
+        tr.childNodes[1].innerText = `${(((performance.now() - start) / 1000).toFixed(1))}s`
         await new Promise(res => setTimeout(res, 100)) // flush text
+        
         for (let i = 0; i < 13; i++) {
             let batchSize = 64 * (2 ** i), time = Infinity, out;
+            tr.childNodes[2].innerText = batchSize
             for (let x = 0; x < 3; x++) {
                 const start = performance.now()
                 out = await gpu.inferenceTest({ shaders, inp, count: batchSize })
                 time = Math.min(time, (performance.now() - start) / 1000)
+                maxSpeed = Math.max(maxSpeed, (batchSize / time) | 0)
+                tr.childNodes[3].innerText = `${(maxSpeed / 1000).toFixed(1)} kH/s ${SPINNER[(spinner++)%SPINNER.length]}`
             }
             if (TESTS[mode] && !check(out, batchSize)) {
                 log(`❌ ${mode} FAILED`)
@@ -206,9 +241,9 @@ async function runBenchmark(options) {
                 return
             }
 
-            log(`Batch: ${batchSize}, Speed: ${(batchSize / time) | 0} ops/s`);
-            if (time > 2) { break }
+            if (time > 1.5) { break }
         }
+        tr.childNodes[3].innerText = `${(maxSpeed / 1000).toFixed(1)} kH/s`
     }
     gpu.clean()
 }
