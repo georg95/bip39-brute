@@ -212,7 +212,9 @@ async function webGPUinit({ SAVED_PROGRESS, BUF_SIZE, adapter, device }) {
         swapBuffers()
         shaders.pipeline.push(deriveAddrShader)
         swapBuffers()
-        shaders.pipeline.push({ ...secp256k1Shader, workPerWarp: WORKGROUP_SIZE / addrCount })
+        progress('secp256k1/derivePubkey');
+        const secp256k1derivePubkey = await buildShader(secp256k1Code, 'derivePubkey', WORKGROUP_SIZE / addrCount, 'secp256k1')
+        shaders.pipeline.push(secp256k1derivePubkey)
         swapBuffers()
 
         progress(addrType === 'eth' || addrType === 'tron' ? 'keccak' : 'hash160');

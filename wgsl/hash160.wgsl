@@ -195,15 +195,15 @@ fn checkHash(out: ptr<function, array<u32, 8>>, gidX: u32) {
 fn initSha256WithPublicKey(w: ptr<function, array<u32, 64>>, offset: u32) {
     for (var i = 0u; i < 16u; i++) { w[i] = 0; }
     //                                     pubkey prefix 0x02 or 0x03
-    w[0] = (input[offset + 16u] >> 8) | (((input[offset + 31u] & 1) + 2) << 24);
-    w[1] = (input[offset + 17u] >> 8) | (input[offset + 16u] << 24);
-    w[2] = (input[offset + 18u] >> 8) | (input[offset + 17u] << 24);
-    w[3] = (input[offset + 19u] >> 8) | (input[offset + 18u] << 24);
-    w[4] = (input[offset + 20u] >> 8) | (input[offset + 19u] << 24);
-    w[5] = (input[offset + 21u] >> 8) | (input[offset + 20u] << 24);
-    w[6] = (input[offset + 22u] >> 8) | (input[offset + 21u] << 24);
-    w[7] = (input[offset + 23u] >> 8) | (input[offset + 22u] << 24);
-    w[8] = (input[offset + 23u] << 24) | 0x800000;
+    w[0] = (input[offset + 0] >> 8) | (((input[offset + 15] & 1) + 2) << 24);
+    w[1] = (input[offset + 1] >> 8) | (input[offset + 0] << 24);
+    w[2] = (input[offset + 2] >> 8) | (input[offset + 1] << 24);
+    w[3] = (input[offset + 3] >> 8) | (input[offset + 2] << 24);
+    w[4] = (input[offset + 4] >> 8) | (input[offset + 3] << 24);
+    w[5] = (input[offset + 5] >> 8) | (input[offset + 4] << 24);
+    w[6] = (input[offset + 6] >> 8) | (input[offset + 5] << 24);
+    w[7] = (input[offset + 7] >> 8) | (input[offset + 6] << 24);
+    w[8] = (input[offset + 7] << 24) | 0x800000;
     w[15] = 33 * 8; // 33 bytes = 33 * 8 bits
 }
 
@@ -213,7 +213,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var out: array<u32, 8>;
     var w: array<u32, 64>;
 
-    initSha256WithPublicKey(&w, gid.x * 32u);
+    initSha256WithPublicKey(&w, gid.x * 16u);
     sha256(&w, &out);
     ripemd160(&out);
 

@@ -741,20 +741,9 @@ fn secp256k1_mul(gidX: u32) -> normalPoint {
   return p;
 }
 
-fn storePt(gidX: u32, ptA: ptr<function, affinePoint>) {
-  for (var i: u32 = 0; i < 16; i++) { output[gidX * 32u + i] = input[gidX * 16u + i]; }
-  store26x10(&ptA.x, gidX * 32u + 16u);
-  store26x10(&ptA.y, gidX * 32u + 24u);
-}
-
-@group(0) @binding(0) var<storage, read> input: array<u32>;
-@group(0) @binding(1) var<storage, read_write> output: array<u32>;
-@group(0) @binding(2) var<storage, read> prec_table: array<u32>;
-
-@compute @workgroup_size(WORKGROUP_SIZE)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+fn pubKey(gid: u32) -> affinePoint {
   var ptA: affinePoint;
-  var p = secp256k1_mul(gid.x);
+  var p = secp256k1_mul(gid);
   var z2: array<u32, 10>;
   var z3: array<u32, 10>;
   minv(&p.z);
@@ -763,5 +752,25 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   mmul2(&z3, &p.z, &z2);
   mmul2(&ptA.x, &p.x, &z2);
   mmul2(&ptA.y, &p.y, &z3);
-  storePt(gid.x, &ptA);
+  return ptA;
 }
+
+@group(0) @binding(0) var<storage, read> input: array<u32>;
+@group(0) @binding(1) var<storage, read_write> output: array<u32>;
+@group(0) @binding(2) var<storage, read> prec_table: array<u32>;
+
+@compute @workgroup_size(WORKGROUP_SIZE)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  var ptA = pubKey(gid.x);
+  for (var i: u32 = 0; i < 16; i++) { output[gid.x * 32u + i] = input[gid.x * 16u + i]; }
+  store26x10(&ptA.x, gid.x * 32u + 16u);
+  store26x10(&ptA.y, gid.x * 32u + 24u);
+}
+
+@compute @workgroup_size(WORKGROUP_SIZE)
+fn derivePubkey(@builtin(global_invocation_id) gid: vec3<u32>) {
+  var ptA = pubKey(gid.x);
+  store26x10(&ptA.x, gid.x * 16u);
+  store26x10(&ptA.y, gid.x * 16u + 8u);
+}
+

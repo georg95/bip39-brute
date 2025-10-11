@@ -77,8 +77,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     for (var i = 0u; i < 25; i++) { state[i] = vec2<u32>(0u, 0u); }
     for (var i = 0u; i < 8; i++) {
         state[i] = vec2<u32>(
-            swap_bytes_u32(input[gid.x*32u + 16u + i*2u]),
-            swap_bytes_u32(input[gid.x*32u + 16u + i*2u + 1u]));
+            swap_bytes_u32(input[gid.x*16u + i*2u]),
+            swap_bytes_u32(input[gid.x*16u + i*2u + 1u]));
     }
     state[8].x = 0x01;
     state[16].y = 0x80000000;

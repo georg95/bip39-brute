@@ -203,7 +203,7 @@ async function brutePasswordGPU({ SAVED_PROGRESS, bip39mask, hashList, addrType 
       inference,
       setEccTable,
       prepareShaderPipeline,
-    } = await webGPUinit({ BUF_SIZE: Math.max(batchSize*196, batchSize*128*ADDR_COUNT) })
+    } = await webGPUinit({ BUF_SIZE: Math.max(batchSize*196, batchSize*64*ADDR_COUNT) })
     log(SAVED_PROGRESS ? `[${gpuName}]\nBruteforce resume...` : `[${gpuName}]\nBruteforce init...`, true)
     await setEccTable(addrType === 'solana' ? 'ed25519' : 'secp256k1')
     const PASSWORD_LISTS = PASSWORD_SOURCE === 'default' ? [
@@ -283,7 +283,7 @@ async function bruteSeedGPU({ SAVED_PROGRESS, bip39mask, hashList, addrType }) {
     setEccTable,
     inferenceMask,
     prepareShaderPipeline,
-  } = await webGPUinit({ SAVED_PROGRESS, BUF_SIZE: Math.max(batchSize*196, batchSize*128*ADDR_COUNT) })
+  } = await webGPUinit({ SAVED_PROGRESS, BUF_SIZE: Math.max(batchSize*196, batchSize*64*ADDR_COUNT) })
   log(SAVED_PROGRESS ? `[${name}]\nBruteforce resume...` : `[${name}]\nBruteforce init...`, true)
   await setEccTable(addrType === 'solana' ? 'ed25519' : 'secp256k1')
   await prepareShaderPipeline({

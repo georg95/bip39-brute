@@ -128,5 +128,5 @@ Known ethereum addresses:
 - [x] Links for recovery state
 - [x] Readme docs and examples
 - [x] Better benchmarks
-- [ ] Naming project
 - [ ] Optimize performance
+- [ ] Naming project
