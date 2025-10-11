@@ -118,22 +118,42 @@ const TESTS = {
             return (u32arrToHex(out.slice(0, 16)) === MNEMONIC_SEED_0 && u32arrToHex(out.slice(80, 96)) === MNEMONIC_SEED_5)
         } }
     },
-    'pbkdf2-hmac-sha512\n2048 iterations\nmask mode': async function ({ passwords, WORKGROUP_SIZE }, gpu) {
+    'mnemonic init': async function ({ passwords, WORKGROUP_SIZE }, gpu) {
         const MNEMONIC_PASSWORD = ''
         const MASK = 'chimney embody pulp lawsuit doctor diary hope gun motion coyote flip desert'
-        let pbkdf2Code = setPermutationsMask(MASK, (await fetch('wgsl/pbkdf2_mask.wgsl').then(r => r.text())))
-            .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))            
+        let mnemonicInitCode = setPermutationsMask(MASK, (await fetch('wgsl/mnemonic_init.wgsl').then(r => r.text())))
+            .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
             .replaceAll('WORD_COUNT', MASK.split(' ').length.toString(10))
             .replaceAll('PASS_LEN', (MNEMONIC_PASSWORD.length + 1).toString(10))
             // 1 character is stub because wgsl not allow 0-item arrays
             .replaceAll('PASSWORD__', ((MNEMONIC_PASSWORD+'_').split('').map(x => `${x.charCodeAt(0)}u`).join(', ')).toString(10))
+        const shaders = [await gpu.buildShader(mnemonicInitCode, 'main', WORKGROUP_SIZE)]
+        const inp = new Uint32Array(32).fill(0)
+        const MNEMONIC_SEED = '23393afab349ad8310ae8247b6493e2edc9649221a077afbb54f71180c8393a7ca72fef0498f4ec2da463d088d96feef1eb8fbc6537850bfe5708cd17c6009dcbea23e9808af8f12a61ca4eb38a270abdb64feffd34a9f06f04e4b8400f8e75721d8f67599a95dedf3b0d47a27fc96b96b5754b46948d62d7fe0212ff50d110ad46d1ff2aea5c626dc14c6e0871a01a2c670236c60d111a781f1c28c2dcae20b2d95b9f4a337b273d7bde682a858a87e008eb81214a3f07c14a60a1193cdd331'
+
+        return { shaders, inp, check(out) {
+            return (u32arrToHex(out.slice(0, 48)) === MNEMONIC_SEED)
+        } }
+    },
+    'pbkdf2-hmac-sha512\n2048 iterations\nmask mode': async function ({ passwords, WORKGROUP_SIZE }, gpu) {
+        const MNEMONIC_PASSWORD = ''
+        const MASK = 'chimney embody pulp lawsuit doctor diary hope gun motion coyote flip desert'
+        let mnemonicInitCode = setPermutationsMask(MASK, (await fetch('wgsl/mnemonic_init.wgsl').then(r => r.text())))
+            .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
+            .replaceAll('WORD_COUNT', MASK.split(' ').length.toString(10))
+            .replaceAll('PASS_LEN', (MNEMONIC_PASSWORD.length + 1).toString(10))
+            // 1 character is stub because wgsl not allow 0-item arrays
+            .replaceAll('PASSWORD__', ((MNEMONIC_PASSWORD+'_').split('').map(x => `${x.charCodeAt(0)}u`).join(', ')).toString(10))
+        let pbkdf2Code = setPermutationsMask(MASK, (await fetch('wgsl/pbkdf2.wgsl').then(r => r.text())))
+            .replaceAll('WORKGROUP_SIZE', WORKGROUP_SIZE.toString(10))
         pbkdf2Code = unrolledSha512mask_wgpu(pbkdf2Code)
-        const shaders = [await gpu.buildShader(pbkdf2Code, 'main', WORKGROUP_SIZE)]
+        const shaders = [await gpu.buildShader(mnemonicInitCode, 'main', WORKGROUP_SIZE)]
+        gpu.swapBuffers()
+        shaders.push(await gpu.buildShader(pbkdf2Code, 'main', WORKGROUP_SIZE))
         const inp = new Uint32Array(32).fill(0)
         const MNEMONIC_SEED = '6e7f9c85c909c1f37e553ada9039cc705b73a441685db2468c8d2b8409fa9c14e27ad6c464b34485a820d18c3bc2cb78e31a9423af437d41ae4b0a26e94c695e'
 
         return { shaders, inp, check(out) {
-            console.log('seed:', u32arrToHex(out.slice(0, 16)))
             return (u32arrToHex(out.slice(0, 16)) === MNEMONIC_SEED)
         } }
     },
@@ -211,9 +231,9 @@ async function runBenchmark(options) {
     const MNEMONIC = 'expose census trophy review common rebel ask depend build caught frame accident naive shiver inmate host assault fan tonight accident left useful tongue blood'
     const passwords = 1024 * 128
     const WORKGROUP_SIZE = 64
-    const gpu = await webGPUinit({...options, BUF_SIZE: passwords*128 })
+    const gpu = await webGPUinit({...options, BUF_SIZE: passwords*196 })
 
-    for (let mode of ['pbkdf2-hmac-sha512\n2048 iterations\nmask mode']) {
+    for (let mode in TESTS) {
         let maxSpeed = 0, spinner = 0
         const tr = document.getElementById(mode)
         const start = performance.now()

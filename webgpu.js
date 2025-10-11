@@ -463,6 +463,7 @@ async function webGPUinit({ SAVED_PROGRESS, BUF_SIZE, adapter, device }) {
     return {
         initValidSeedsShader,
         prepareShaderPipeline,
+        swapBuffers,
         async setEccTable(eccType) {
           tableType = eccType;
           const precomputeTable = await precomputeEccTable(eccType)
@@ -1083,13 +1084,26 @@ function unrolledSha512mask_wgpu(template) {
     MAIN_ROUNDS += rollX(mainLoopOps(i), i / 2)
   }
   
-  template = template.replaceAll('INIT_BUF', Array(32).fill(0).map((_, i) => `var W${i} = main_buf[${i}];`).join(' '))
+  /*
+  for (var i = 0u; i < 16u; i++) { seed1[i] = input[gid.x * 48u + 16u + i]; }
+  for (var i = 0u; i < 16u; i++) { seed2[i] = input[gid.x * 48u + 32u + i]; }
+  for (var i = 0u; i < 16u; i++) { dk[i] = input[gid.x * 48u + i]; }
+  */
   template = template
+    .replaceAll('INIT_BUF', Array(32).fill(0).map((_, i) => i < 16 ? `var W${i} = input[gid.x*48u + ${i}];` : `var W${i} = 0u;`).join(' '))
+    .replaceAll('INIT_SEED1', Array(16).fill(0).map((_, i) => `var seed1_${i} = input[gid.x*48u + ${i + 16}];`).join(' '))
+    .replaceAll('INIT_SEED2', Array(16).fill(0).map((_, i) => `var seed2_${i} = input[gid.x*48u + ${i + 32}];`).join(' '))
+    .replaceAll('INIT_DK', Array(16).fill(0).map((_, i) => `var dk_${i} = W${i};`).join(' '))
     .replaceAll('INIT_ROUNDS', INIT_ROUNDS)
     .replaceAll('MAIN_ROUNDS', MAIN_ROUNDS)
 
   for (let i = 31; i >= 0; i--) {
     template = template.replaceAll(`W[${i}]`, `W${i}`)
+  }
+  for (let i = 15; i >= 0; i--) {
+    template = template.replaceAll(`seed1[${i}]`, `seed1_${i}`)
+    template = template.replaceAll(`seed2[${i}]`, `seed2_${i}`)
+    template = template.replaceAll(`dk[${i}]`, `dk_${i}`)
   }
 
   return template
